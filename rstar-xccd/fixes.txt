@@ -1,0 +1,3 @@
+module load StdEnv/2023 gcc arrow/15.0.1 python/3.11
+
+module load opencv
