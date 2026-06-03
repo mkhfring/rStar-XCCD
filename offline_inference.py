@@ -333,9 +333,9 @@ def main():
     
     args = parser.parse_args()
 
-    # output = os.path.join(current_location, "offline_results", args.output)
     data_file_path = os.path.join(current_location, args.datafile)
-    output = os.path.join(current_location, f"{args.datafile}_{args.model}_inference_result.jsonl")
+    data_stem = pathlib.Path(args.datafile).stem
+    output = os.path.join(current_location, "test_file_feeds", "test_results", f"{data_stem}_{args.model}_inference_result.jsonl")
     data_stem = os.path.splitext(data_file_path)[0]    
     ids_filename = f"{data_stem}_ids.txt" 
 
