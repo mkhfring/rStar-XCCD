@@ -220,3 +220,4 @@ __marimo__/
 # Test results
 test_results/
 test_file_feeds/
+qwen-inference/
