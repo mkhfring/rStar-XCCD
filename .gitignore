@@ -221,3 +221,5 @@ __marimo__/
 test_results/
 test_file_feeds/
 qwen-inference/
+rstar-xccd/models/
+rstar-xccd/eval_data/
