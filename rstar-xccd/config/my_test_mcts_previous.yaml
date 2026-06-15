@@ -1,7 +1,7 @@
 mode: "mcts"
 model_dir: ""
 
-few_shot_path: "./rstar_deepthink/few_shots/few_shots_new.json"
+few_shot_path: "./rstar_deepthink/few_shots/few_shots.json"
 prompt_path: "./rstar_deepthink/few_shots/mcts_prompt.json"
 
 swap_space: 8
@@ -11,7 +11,7 @@ errors_threshold: 2
 prompt_wrap: "rstar"
 result_unwrap: "rstar"
 step_delim: "\n"
-stop: ["<end_of_answer>"]
+stop: []
 
 max_depth: 4
 n_generate_sample: 2
