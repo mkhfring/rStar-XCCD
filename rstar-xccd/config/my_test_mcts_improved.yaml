@@ -11,7 +11,7 @@ errors_threshold: 2
 prompt_wrap: "rstar"
 result_unwrap: "rstar"
 step_delim: "\n"
-stop: []
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
 
 max_depth: 4
 n_generate_sample: 2
