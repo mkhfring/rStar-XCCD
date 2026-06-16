@@ -11,7 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from timeout_decorator import timeout
 from rstar_deepthink.config import BaseConfig
 from rstar_deepthink.nodes.base_node import BaseNode
-from rstar_deepthink.tools.python_tool import PythonInterpreter
+from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python
 from rstar_deepthink.constants import TIMEOUT_SECONDS, TIMEOUT_MESSAGE, CODE_END, OUTPUT_END, CODE, ANSWER
 
 
@@ -118,8 +118,19 @@ def extract_program(result: str, last_only=False):
         program = result
     return program.strip()
 
+def _get_root_question(node: Type[BaseNode]) -> str:
+    """Walk up to the root node and return the question string from extra_info."""
+    while node.parent is not None:
+        node = node.parent
+    extra_info = node.state.get("extra_info", "")
+    prefix = "question: "
+    if extra_info.startswith(prefix):
+        return extra_info[len(prefix):]
+    return extra_info
+
+
 def code_execution(
-    node: Type[BaseNode], 
+    node: Type[BaseNode],
     parser_result: Dict[str, str],
 ) -> str:
 
@@ -135,6 +146,14 @@ def code_execution(
         # then, we execute current code snippets
         action_input = parser_result["action_input"]
         action_input = extract_program(''.join(history_action_inputs) + action_input)
+
+        # Write Code 1 as candidate_code.py so subprocess tests can run it.
+        question = _get_root_question(node)
+        code1 = extract_code1_python(question)
+        if code1:
+            with open("candidate_code.py", "w") as f:
+                f.write(code1)
+
         observation = str(tool_func(action_input)).strip()
         del tool_func
         return observation

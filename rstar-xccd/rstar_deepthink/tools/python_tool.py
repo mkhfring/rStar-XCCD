@@ -89,6 +89,24 @@ def sanitize_input(query: str) -> str:
     return query
 
 
+def extract_code1_python(question: str) -> str:
+    """Extract the Python source of Code 1 from a clone-detection question.
+
+    Looks for the block introduced by 'Code 1: Python\\n```python\\n' and
+    returns everything up to the closing '```'.  Returns an empty string if
+    the pattern is not found.
+    """
+    marker = "Code 1: Python\n```python\n"
+    start = question.find(marker)
+    if start == -1:
+        return ""
+    start += len(marker)
+    end = question.find("\n```", start)
+    if end == -1:
+        return ""
+    return question[start:end]
+
+
 class PythonInputs(BaseModel):
     query: str = Field(description="code snippet to run")
     
