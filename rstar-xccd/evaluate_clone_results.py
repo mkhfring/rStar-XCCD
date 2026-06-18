@@ -1,0 +1,149 @@
+"""Evaluate clone-detection MCTS results: precision, recall, F1, and response rate.
+
+Each line of the input file is one question with ground truth label `answer`
+(`clone` / `non-clone`) and an MCTS search tree under `rstar`. The tree has no
+single designated "final answer" field at the top level, so for every leaf
+node whose `final_answer` is non-empty and not one of the search's failure
+placeholders ("Too many consecutive steps have code errors.", "Fail to sove
+the problem within limited steps.", "Fail to generate parsable text for next
+step."), we collect the (normalized, lower-cased/stripped) text. Note: the
+per-node "value"/"q_value" fields in this file already encode correctness
+against the ground truth (this run was produced with is_sampling=True), so
+they cannot be used to pick a "best" candidate without leaking the label.
+Instead, the model's predicted label for a question is decided by majority
+vote among its leaf nodes whose normalized final_answer is exactly "clone" or
+"non-clone" (ties broken by the lexicographically-earliest node tag, which is
+also the earliest-visited node). A question is counted as "no judgment" (and
+contributes to the response-rate count) only if no leaf node in its tree
+produced "clone" or "non-clone" as its final_answer.
+"""
+import json
+import sys
+from pathlib import Path
+
+FAILURE_PLACEHOLDERS = {
+    "too many consecutive steps have code errors.",
+    "fail to sove the problem within limited steps.",
+    "fail to generate parsable text for next step.",
+}
+VALID_LABELS = {"clone", "non-clone"}
+
+
+def node_sort_key(tag):
+    return tuple(int(part) for part in tag.split("."))
+
+
+def predict_label(rstar_tree):
+    """Return the majority-vote label ('clone'/'non-clone') for a question's
+    tree, or None if no leaf node produced a valid clone/non-clone answer."""
+    votes = []
+    for tag, node in sorted(rstar_tree.items(), key=lambda kv: node_sort_key(kv[0])):
+        final_answer = (node.get("final_answer") or "").strip().lower()
+        if final_answer in VALID_LABELS:
+            votes.append(final_answer)
+    if not votes:
+        return None
+    counts = {label: votes.count(label) for label in VALID_LABELS}
+    if counts["clone"] == counts["non-clone"]:
+        return votes[0]  # tie -> earliest node's vote
+    return max(counts, key=counts.get)
+
+
+def evaluate(input_path):
+    total = 0
+    tp = fp = tn = fn = 0
+    no_judgment = 0
+
+    with open(input_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            total += 1
+
+            ground_truth = (record.get("answer") or "").strip().lower()
+            predicted = predict_label(record.get("rstar", {}))
+
+            if predicted is None:
+                no_judgment += 1
+                continue
+
+            if predicted == "clone" and ground_truth == "clone":
+                tp += 1
+            elif predicted == "clone" and ground_truth == "non-clone":
+                fp += 1
+            elif predicted == "non-clone" and ground_truth == "non-clone":
+                tn += 1
+            elif predicted == "non-clone" and ground_truth == "clone":
+                fn += 1
+
+    judged = total - no_judgment
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+    response_rate = no_judgment / total if total else 0.0
+
+    return {
+        "total_instances": total,
+        "judged_instances": judged,
+        "no_judgment_instances": no_judgment,
+        "response_rate": response_rate,
+        "true_positive": tp,
+        "false_positive": fp,
+        "true_negative": tn,
+        "false_negative": fn,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+    }
+
+
+def format_report(stats, input_path):
+    lines = [
+        f"Evaluation results for: {input_path}",
+        "",
+        "Positive class: 'clone' | Negative class: 'non-clone'",
+        f"Total instances: {stats['total_instances']}",
+        f"Instances with a clone/non-clone final judgment: {stats['judged_instances']}",
+        f"Instances with no clone/non-clone final judgment: {stats['no_judgment_instances']}",
+        "",
+        "Response rate (instances with no clone/non-clone final judgment / total instances):",
+        f"  {stats['no_judgment_instances']} / {stats['total_instances']} = {stats['response_rate']:.4f}",
+        "",
+        "Confusion matrix (computed only over judged instances):",
+        f"  True Positive  (predicted clone,     actual clone):     {stats['true_positive']}",
+        f"  False Positive (predicted clone,     actual non-clone): {stats['false_positive']}",
+        f"  True Negative  (predicted non-clone, actual non-clone): {stats['true_negative']}",
+        f"  False Negative (predicted non-clone, actual clone):     {stats['false_negative']}",
+        "",
+        f"Precision: {stats['precision']:.4f}",
+        f"Recall:    {stats['recall']:.4f}",
+        f"F1 score:  {stats['f1']:.4f}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def main():
+    if len(sys.argv) > 1:
+        input_path = Path(sys.argv[1])
+    else:
+        input_path = Path(
+            "eval_data/test_same_python_java.jsonl.mcts.Qwen2.5-Coder-3B-Instruct.20260617030600.jsonl"
+        )
+
+    output_path = Path(sys.argv[2]) if len(sys.argv) > 2 else input_path.with_suffix(
+        input_path.suffix + ".eval_results.txt"
+    )
+
+    stats = evaluate(input_path)
+    report = format_report(stats, input_path)
+
+    output_path.write_text(report, encoding="utf-8")
+    print(report)
+    print(f"Results written to: {output_path}")
+
+
+if __name__ == "__main__":
+    main()

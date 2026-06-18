@@ -113,9 +113,6 @@ def extract_program(result: str, last_only=False):
             start = False
         elif start:
             program += line + "\n"
-    # maybe all output is a program
-    if not program:
-        program = result
     return program.strip()
 
 def _get_root_question(node: Type[BaseNode]) -> str:

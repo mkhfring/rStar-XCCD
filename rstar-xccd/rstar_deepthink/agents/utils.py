@@ -132,11 +132,13 @@ def rstar_step_result_unwrap(
     #if ANSWER_END in text or "boxed" in text:
     if "boxed" in text:
         parser_result["final_answer"] = extract_math_answer(text)
-        return text, parser_result
-    else:
+    elif "<code>" in text:
+        # Only route to the interpreter when this step actually contains a
+        # code block; otherwise plain <analysis>/<answer> prose gets executed
+        # as Python and fails with a syntax error.
         parser_result["action"] = "python_interpreter"
         parser_result["action_input"] = text
-        return text, parser_result
+    return text, parser_result
 
 
 def is_multi_choice(answer):
