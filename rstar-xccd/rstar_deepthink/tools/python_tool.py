@@ -89,6 +89,19 @@ def sanitize_input(query: str) -> str:
     return query
 
 
+def is_python_code(query: str) -> bool:
+    """Check whether a code snippet parses as valid, non-empty Python.
+
+    Used to gate execution: prose, Java snippets, or empty extractions
+    should not be handed to the interpreter.
+    """
+    try:
+        tree = ast.parse(query)
+    except SyntaxError:
+        return False
+    return len(tree.body) > 0
+
+
 def extract_code1_python(question: str) -> str:
     """Extract the Python source of Code 1 from a clone-detection question.
 

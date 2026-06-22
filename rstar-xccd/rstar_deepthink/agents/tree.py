@@ -3,6 +3,7 @@
 # Adapted from https://github.com/MARIO-Math-Reasoning/Super_MARIO
 from __future__ import annotations
 import os
+import re
 from abc import abstractmethod
 from termcolor import colored
 from typing import Optional, Any, Dict, List, Callable, Type, Tuple, Union
@@ -11,7 +12,7 @@ from omegaconf import DictConfig, OmegaConf
 from timeout_decorator import timeout
 from rstar_deepthink.config import BaseConfig
 from rstar_deepthink.nodes.base_node import BaseNode
-from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python
+from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, sanitize_input, is_python_code
 from rstar_deepthink.constants import TIMEOUT_SECONDS, TIMEOUT_MESSAGE, CODE_END, OUTPUT_END, CODE, ANSWER
 
 
@@ -98,21 +99,31 @@ class BaseTree(BaseModel):
                 candidates.extend(node.children)
         return states
     
+FENCE_LINE_RE = re.compile(r"^\s*`{3,}\s*\w*\s*$")
+# Non-greedy, DOTALL so a block can span multiple lines or share a line with
+# its own tags (e.g. "<code> print(x) <end_of_code>"). Falls back to the end
+# of the string if <end_of_code> is missing (e.g. truncated generation).
+CODE_BLOCK_RE = re.compile(r"<code>(.*?)(?:<end_of_code>|$)", re.DOTALL)
+
+
+def _clean_code_block(block: str) -> str:
+    lines = [line for line in block.split("\n") if not FENCE_LINE_RE.match(line)]
+    return "\n".join(lines).strip()
+
+
 def extract_program(result: str, last_only=False):
-    program = ""
-    start = False
     result = result.replace("<end_of_step>", "")
-    for line in result.split("\n"):
-        if line.find("<code>") != -1:
-            if last_only:
-                program = "" # only extract the last program
-            else:
-                program += "\n# ========\n"
-            start = True
-        elif line.find("<end_of_code>") != -1:
-            start = False
-        elif start:
-            program += line + "\n"
+    blocks = CODE_BLOCK_RE.findall(result)
+    if not blocks:
+        return ""
+    if last_only:
+        return _clean_code_block(blocks[-1])
+
+    program = _clean_code_block(blocks[0])
+    for block in blocks[1:]:
+        # only separate from a previously extracted code block,
+        # not before the first one
+        program += "\n# ========\n" + _clean_code_block(block)
     return program.strip()
 
 def _get_root_question(node: Type[BaseNode]) -> str:
@@ -143,6 +154,9 @@ def code_execution(
         # then, we execute current code snippets
         action_input = parser_result["action_input"]
         action_input = extract_program(''.join(history_action_inputs) + action_input)
+
+        if action == "python_interpreter" and not is_python_code(sanitize_input(action_input)):
+            return "No valid Python code found in the response."
 
         # Write Code 1 as candidate_code.py so subprocess tests can run it.
         question = _get_root_question(node)
