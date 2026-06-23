@@ -12,7 +12,7 @@ from omegaconf import DictConfig, OmegaConf
 from timeout_decorator import timeout
 from rstar_deepthink.config import BaseConfig
 from rstar_deepthink.nodes.base_node import BaseNode
-from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, sanitize_input, is_python_code
+from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, sanitize_input, is_python_code, is_java_execution_attempt
 from rstar_deepthink.constants import TIMEOUT_SECONDS, TIMEOUT_MESSAGE, CODE_END, OUTPUT_END, CODE, ANSWER
 
 
@@ -155,8 +155,14 @@ def code_execution(
         action_input = parser_result["action_input"]
         action_input = extract_program(''.join(history_action_inputs) + action_input)
 
-        if action == "python_interpreter" and not is_python_code(sanitize_input(action_input)):
-            return "No valid Python code found in the response."
+        if action == "python_interpreter":
+            sanitized_code = sanitize_input(action_input)
+            if not is_python_code(sanitized_code):
+                return "No valid Python code found in the response."
+            if is_java_execution_attempt(sanitized_code):
+                return ("Java execution is not supported in this sandbox (no JDK on PATH). "
+                        "Do not import java.* or shell out to java/javac; "
+                        "reason about Code 2 (Java) by static analysis instead.")
 
         # Write Code 1 as candidate_code.py so subprocess tests can run it.
         question = _get_root_question(node)
@@ -181,13 +187,13 @@ def collect_action_inputs(
     action: str,
 ) -> List[str]:
     action_inputs = []
-    while node: 
-        if OUTPUT_END in node.state['text'] or CODE_END in node.state['text']:
-            break
+    while node:
         if node.state["action"] == action:
             action_input = node.state["action_input"]
             if action_input and "TimeoutError" not in node.state["text"].split(action_input)[-1]:
                 action_inputs.append(action_input)
+        if OUTPUT_END in node.state['text'] or CODE_END in node.state['text']:
+            break
         node = node.parent
     return action_inputs[::-1]
 

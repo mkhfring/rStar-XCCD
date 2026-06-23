@@ -102,6 +102,36 @@ def is_python_code(query: str) -> bool:
     return len(tree.body) > 0
 
 
+JAVA_TOKEN_RE = re.compile(r"\bjavac?\b")
+
+
+def is_java_execution_attempt(query: str) -> bool:
+    """Check whether a python_interpreter query tries to touch Java.
+
+    `import java.util.Scanner;` is syntactically valid Python (a dotted
+    import), and `subprocess.run(["java", ...])` is itself valid Python, so
+    neither is caught by is_python_code. There is no JDK on PATH in this
+    sandbox, so both always fail at runtime (ModuleNotFoundError /
+    FileNotFoundError). Catch them ahead of execution instead.
+    """
+    try:
+        tree = ast.parse(query)
+    except SyntaxError:
+        return False
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(alias.name.split(".")[0] in ("java", "javax") for alias in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.module.split(".")[0] in ("java", "javax"):
+                return True
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if JAVA_TOKEN_RE.search(node.value):
+                return True
+    return False
+
+
 def extract_code1_python(question: str) -> str:
     """Extract the Python source of Code 1 from a clone-detection question.
 
