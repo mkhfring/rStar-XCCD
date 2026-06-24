@@ -28,4 +28,4 @@ c_puct: 2
 terminal_sample: True
 
 llm_gpu_memory_utilization: 0.90
-tp: 1
+tp: 2
