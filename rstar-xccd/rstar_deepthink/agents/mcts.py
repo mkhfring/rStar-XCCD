@@ -82,7 +82,7 @@ class MCTS(BS):
 
     def expand_node(self, outputs: List[CompletionOutput], node: Type[MCTSNode]) -> None:
         for idx, output in enumerate(outputs):
-            if not output.stop_reason: output.stop_reason = ""
+            if not isinstance(output.stop_reason, str): output.stop_reason = ""
             step_result, parser_result = self.step_unwrap(output.text + output.stop_reason)
             self.create_child(step_result, parser_result, node, idx)
 

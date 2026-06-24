@@ -23,7 +23,7 @@ max_tokens: 512
 need_value_func: False
 batch_size: 1
 num_few_shot: 2
-max_model_len: 4096
+max_model_len: 16384
 c_puct: 2
 terminal_sample: True
 

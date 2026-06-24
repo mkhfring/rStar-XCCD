@@ -138,7 +138,7 @@ class BS(BaseTree):
         for current_node, output in zip(self.current_nodes, outputs):
             self.current_node = current_node
             for idx, output in enumerate(output.outputs):
-                if not output.stop_reason: output.stop_reason = ""
+                if not isinstance(output.stop_reason, str): output.stop_reason = ""
                 step_result, parser_result = self.step_unwrap(output.text + output.stop_reason)
                 self.create_child(step_result, parser_result, current_node)
             self.candidate_nodes.extend(current_node.children)
