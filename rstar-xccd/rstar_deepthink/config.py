@@ -100,6 +100,9 @@ class BaseConfig:
     max_tokens: int = field(
         default=2048, metadata={"help": "Maximum number of tokens to generate per output sequence."}
     )
+    min_tokens: int = field(
+        default=0, metadata={"help": "Minimum number of tokens to generate before any stop condition (stop string or EOS) is allowed to end the sequence. Prevents zero-length completions when resuming a partially-written turn."}
+    )
     # seed: Optional[int] = field(
     #     default=random.randint(1, 100000), metadata={"help": "seed of llm generation for reproducible"}
     # )

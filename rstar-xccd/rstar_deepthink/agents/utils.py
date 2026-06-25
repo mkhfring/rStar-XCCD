@@ -71,14 +71,21 @@ INVALID_ANS = "[invalid]"
 def extract_math_answer(answer):
     try:
         ans = answer
-        extract_ans_temp = ans.split('.\n')[0]
-        extract_ans_temp = extract_ans_temp.strip()
-        if len(extract_ans_temp) > 0 and extract_ans_temp[-1] == '.':
-            extract_ans = extract_ans_temp[0:-1]
+        if r"\boxed{" in ans:
+            # Search the full text for \boxed{...} first -- truncating to
+            # the first paragraph (below) before searching would discard a
+            # boxed answer that appears after a multi-paragraph analysis,
+            # which is the normal case for tasks with a longer response.
+            extract_ans = remove_text_box(extract_boxed_answer(ans))
         else:
-            extract_ans = extract_ans_temp
-        extract_ans = extract_ans.strip()
-        extract_ans = remove_text_box(extract_boxed_answer(extract_ans))
+            extract_ans_temp = ans.split('.\n')[0]
+            extract_ans_temp = extract_ans_temp.strip()
+            if len(extract_ans_temp) > 0 and extract_ans_temp[-1] == '.':
+                extract_ans = extract_ans_temp[0:-1]
+            else:
+                extract_ans = extract_ans_temp
+            extract_ans = extract_ans.strip()
+            extract_ans = remove_text_box(extract_boxed_answer(extract_ans))
     except:
         extract_ans = INVALID_ANS
     return extract_ans

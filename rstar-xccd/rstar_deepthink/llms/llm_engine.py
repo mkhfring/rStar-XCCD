@@ -26,6 +26,7 @@ def llm_init(config):
         repetition_penalty=config.repetition_penalty,
         best_of=config.best_of,
         max_tokens=config.max_tokens,
+        min_tokens=config.min_tokens,
         n=config.n_generate_sample,
         stop=config.stop,
         skip_special_tokens=False,
