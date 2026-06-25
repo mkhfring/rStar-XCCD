@@ -23,12 +23,13 @@ def llm_init(config):
         temperature=config.temperature,
         top_k=config.top_k,
         top_p=config.top_p,
+        repetition_penalty=config.repetition_penalty,
         best_of=config.best_of,
-        max_tokens=config.max_tokens, 
+        max_tokens=config.max_tokens,
         n=config.n_generate_sample,
         stop=config.stop,
         skip_special_tokens=False,
-        seed=config.seed if config.temperature == 0 else None, # vllm0.6.6.post1 
+        seed=config.seed if config.temperature == 0 else None, # vllm0.6.6.post1
     )
     return llm, sampling_params
 

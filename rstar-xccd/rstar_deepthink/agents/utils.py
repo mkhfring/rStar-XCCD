@@ -2,7 +2,9 @@
 # Licensed under the MIT license.
 # Adapted from https://github.com/MARIO-Math-Reasoning/Super_MARIO
 from __future__ import annotations
+import functools
 from typing import List, Dict, Any, Optional, Type, Tuple, Union
+from transformers import AutoTokenizer
 from math_evaluation import is_equiv
 from rstar_deepthink.prompts.prompt_rstar import PROMPT_RSTAR
 from rstar_deepthink.tools.python_tool import PythonInterpreter
@@ -86,32 +88,48 @@ python_tool_string = f"{PythonInterpreter().name}: {PythonInterpreter().descript
 python_tool_name = PythonInterpreter().name
     
 
+_ANALYSIS_TAG = "<analysis>"
+
+
+@functools.lru_cache(maxsize=4)
+def _get_chat_tokenizer(model_dir: str):
+    return AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
+
+
+def _split_example_into_turns(example: str) -> Tuple[str, str]:
+    """Split a few-shot transcript into (question, response) chat turns.
+
+    Few-shot examples are stored as a single demonstration string: "Question:
+    ..." running straight into the expected <analysis>...<end_of_answer>
+    response. apply_chat_template needs these as separate user/assistant
+    turns, so split right at the model's first structural tag.
+    """
+    idx = example.find(_ANALYSIS_TAG)
+    if idx == -1:
+        return example.strip(), ""
+    return example[:idx].strip(), example[idx:].strip()
+
+
 def rstar_prompt_wrap(
-    question: str, 
+    question: str,
     partial_solution: str,
     config,
 ) -> str:
     step_delim = config.step_delim
     prompt_pot = PROMPT_RSTAR(config)
-    inputs = f"{question}{step_delim}"  
+    inputs = f"{question}{step_delim}"
 
     rstar_examples = prompt_pot.random_examples()
-    
-    if len(rstar_examples) > 1:
-        example_prefix = "The following are %d demonstration examples." % len(rstar_examples)
-    elif len(rstar_examples) == 1:
-        example_prefix = "The following is a demonstration example."
 
-    format_instructions = prompt_pot.pot_format_instructions
-    
-    if len(rstar_examples) > 0:
-        prompt = step_delim.join([format_instructions, example_prefix, *rstar_examples, ""])
-    else:
-        prompt = step_delim.join([format_instructions, ""])
-    if prompt.strip() == "":
-        prompt = step_delim.join([prompt_pot.pot_suffix.format(input=inputs)])
-    else:
-        prompt = step_delim.join([prompt, prompt_pot.pot_suffix.format(input=inputs)])
+    messages = [{"role": "system", "content": prompt_pot.pot_format_instructions}]
+    for example in rstar_examples:
+        user_turn, assistant_turn = _split_example_into_turns(example)
+        messages.append({"role": "user", "content": user_turn})
+        messages.append({"role": "assistant", "content": assistant_turn})
+    messages.append({"role": "user", "content": prompt_pot.pot_suffix.format(input=inputs)})
+
+    tokenizer = _get_chat_tokenizer(config.model_dir)
+    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     if partial_solution:
         prompt = "".join([prompt, partial_solution])
     return prompt + ""

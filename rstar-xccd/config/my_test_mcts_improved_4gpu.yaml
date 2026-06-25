@@ -6,6 +6,9 @@ prompt_path: "./rstar_deepthink/few_shots/mcts_prompt.json"
 
 swap_space: 8
 temperature: 0.7
+top_p: 0.8
+top_k: 20
+repetition_penalty: 1.1
 errors_threshold: 2
 
 prompt_wrap: "rstar"

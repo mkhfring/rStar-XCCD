@@ -88,6 +88,9 @@ class BaseConfig:
     top_k: int = field(
         default=-1, metadata={"help": "Float that controls the probability of other highly-scored candidates to be chosen"}
     )
+    repetition_penalty: float = field(
+        default=1.0, metadata={"help": "Penalizes repeated tokens; >1.0 discourages repetition loops. Set to 1.0 to disable."}
+    )
     use_beam_search: bool = field(
         default=False, metadata={"help": "whether to enable beam search decoding"}
     )
