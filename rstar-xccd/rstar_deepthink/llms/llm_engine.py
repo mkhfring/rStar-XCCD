@@ -28,7 +28,7 @@ def llm_init(config):
         max_tokens=config.max_tokens,
         min_tokens=config.min_tokens,
         n=config.n_generate_sample,
-        stop=config.stop,
+        stop=list(config.stop),
         skip_special_tokens=False,
         seed=config.seed if config.temperature == 0 else None, # vllm0.6.6.post1
     )

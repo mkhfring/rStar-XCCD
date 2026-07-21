@@ -1,7 +1,7 @@
-# Quick interactive-node smoke test config.
-# Use with: --qaf eval_data/test_same_python_java_sample10.jsonl
-# Mirrors my_test_mcts_improved_1gpu.yaml (single GPU) with all current fixes
-# (chat template, top_p/top_k/repetition_penalty, min_tokens, max_model_len).
+# Phi-3-mini-128k-instruct, 2 GPU (tensor-parallel) config.
+# Mirrors my_test_mcts_improved_7b_2gpu.yaml; uses the plain stop-tag list
+# since Phi-3-mini follows the <end_of_*> tag protocol reliably (unlike
+# DeepSeek-Coder-7B, which needed an expanded malformed-tag stop list).
 mode: "mcts"
 model_dir: ""
 
@@ -21,7 +21,7 @@ result_unwrap: "rstar"
 step_delim: "\n"
 stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
 
-max_depth: 6
+max_depth: 4
 n_generate_sample: 2
 best_of: 2
 is_sampling: True
@@ -36,4 +36,4 @@ c_puct: 2
 terminal_sample: True
 
 llm_gpu_memory_utilization: 0.90
-tp: 1
+tp: 2

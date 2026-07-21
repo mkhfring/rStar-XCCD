@@ -136,7 +136,9 @@ def rstar_prompt_wrap(
     messages.append({"role": "user", "content": prompt_pot.pot_suffix.format(input=inputs)})
 
     tokenizer = _get_chat_tokenizer(config.model_dir)
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    prompt = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True, enable_thinking=False,
+    )
     if partial_solution:
         prompt = "".join([prompt, partial_solution])
     return prompt + ""

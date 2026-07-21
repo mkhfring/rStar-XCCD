@@ -1,0 +1,20 @@
+antlr4-python3-runtime==4.11.1
+omegaconf==2.4.0.dev2
+termcolor
+jsonlines
+pebble
+vllm==0.8.5.post1+computecanada
+triton==3.2.0+computecanada
+matplotlib
+pyparsing
+scipy
+word2number
+transformers==4.53.2+computecanada
+trl==0.9.6
+func_timeout
+editdistance
+datasets==2.19.2
+pyparsing
+timeout_decorator
+# latex2sympy2: install the MARIO_EVAL fork, not the PyPI package of the same name/version:
+#   pip install /project/6104180/khajezad/MARIO_EVAL/latex2sympy
