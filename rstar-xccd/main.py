@@ -4,7 +4,9 @@
 from __future__ import annotations
 import os
 import json
+import time
 import torch
+import traceback
 import argparse
 from tqdm import tqdm
 from datetime import datetime
@@ -51,6 +53,7 @@ def parse_args():
 
 
 if __name__ == '__main__':
+    start_time = time.time()
     args = parse_args()
 
     config = OmegaConf.structured(BaseConfig)
@@ -79,7 +82,9 @@ if __name__ == '__main__':
     if args.reward_model_dir:
         llm_version += "." + args.reward_model_dir.split("/")[-1]
         
-    saved_jsonl_file = f"{args.qaf}.{config.mode}.{llm_version}.{datetime.now().strftime('%Y%m%d%H%M%S')}.jsonl" 
+    qaf_stem, qaf_ext = os.path.splitext(args.qaf)
+    qaf_tag = f"{qaf_stem}_depth_{config.max_depth}{qaf_ext}"
+    saved_jsonl_file = f"{qaf_tag}.{config.mode}.{llm_version}.{datetime.now().strftime('%Y%m%d%H%M%S')}.jsonl"
     
     if args.save_in_model:
         saved_jsonl_file = args.save_in_model + '.jsonl'
@@ -88,11 +93,26 @@ if __name__ == '__main__':
         
     with open(saved_jsonl_file, "a+", encoding='utf-8') as writer:
         for cur_data in tqdm(batch(data, config.batch_size), desc="Main Processing"):
-            agents = [agent(config=config, question=d["question"], ground_truth=str(d["answer"])) 
+            agents = [agent(config=config, question=d["question"], ground_truth=str(d["answer"]))
                       for d in cur_data]
-            jsonlines = solver.solve(agents, saved_jsonl_file, cur_data)
+            try:
+                jsonlines = solver.solve(agents, saved_jsonl_file, cur_data)
+            except Exception as e:
+                # A single pathological input (e.g. a prompt that overflows
+                # max_model_len) would otherwise crash the whole batch job
+                # and discard every already-processed sample. Log it and
+                # write a placeholder so the run can continue past it.
+                traceback.print_exc()
+                print(f"Skipping {len(cur_data)} sample(s) after solve() failure: {e}")
+                jsonlines = {d["question"]: {} for d in cur_data}
+                for d in cur_data:
+                    d["error"] = f"{type(e).__name__}: {e}"
             for d in cur_data:
                 question = d["question"]
                 d["rstar"] = jsonlines[question]
                 writer.write(json.dumps(d, ensure_ascii=False) + '\n')
                 writer.flush()
+
+        elapsed_minutes = round((time.time() - start_time) / 60, 2)
+        writer.write(json.dumps({"index": len(data) + 1, "time": elapsed_minutes}, ensure_ascii=False) + '\n')
+        writer.flush()

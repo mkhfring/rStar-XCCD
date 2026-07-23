@@ -11,11 +11,15 @@ per-node "value"/"q_value" fields in this file already encode correctness
 against the ground truth (this run was produced with is_sampling=True), so
 they cannot be used to pick a "best" candidate without leaking the label.
 Instead, the model's predicted label for a question is decided by majority
-vote among its leaf nodes whose normalized final_answer is exactly "clone" or
+vote among its leaf nodes whose normalized final_answer maps to "clone" or
 "non-clone" (ties broken by the lexicographically-earliest node tag, which is
-also the earliest-visited node). A question is counted as "no judgment" (and
-contributes to the response-rate count) only if no leaf node in its tree
-produced "clone" or "non-clone" as its final_answer.
+also the earliest-visited node). Models sometimes answer with a paraphrase of
+the requested label instead of the literal word (e.g. "semantic clone" or
+"semantic_clone" instead of "clone") -- normalize_label() maps these variants
+to the intended label so they still count as a vote. A question is counted as
+"no judgment" (and contributes to the response-rate count) only if no leaf
+node in its tree produced a final_answer that normalizes to "clone" or
+"non-clone".
 """
 import json
 import sys
@@ -27,20 +31,40 @@ FAILURE_PLACEHOLDERS = {
     "fail to generate parsable text for next step.",
 }
 VALID_LABELS = {"clone", "non-clone"}
+IGNORED_INDICES = {1001}
 
 
 def node_sort_key(tag):
     return tuple(int(part) for part in tag.split("."))
 
 
+def normalize_label(final_answer):
+    """Map a leaf node's final_answer text to 'clone'/'non-clone', or None if
+    it doesn't express either label (e.g. a failure placeholder)."""
+    text = final_answer.strip().lower().replace("_", " ")
+    if text in VALID_LABELS:
+        return text
+    if text in FAILURE_PLACEHOLDERS:
+        return None
+    if "non-clone" in text or "non clone" in text or "not clone" in text or "not a clone" in text or "not code clone" in text:
+        return "non-clone"
+    if "clone" in text:
+        return "clone"
+    return None
+
+
 def predict_label(rstar_tree):
     """Return the majority-vote label ('clone'/'non-clone') for a question's
-    tree, or None if no leaf node produced a valid clone/non-clone answer."""
+    tree, or None if no leaf node produced an answer that normalizes to
+    clone/non-clone."""
     votes = []
     for tag, node in sorted(rstar_tree.items(), key=lambda kv: node_sort_key(kv[0])):
-        final_answer = (node.get("final_answer") or "").strip().lower()
-        if final_answer in VALID_LABELS:
-            votes.append(final_answer)
+        final_answer = (node.get("final_answer") or "").strip()
+        if not final_answer:
+            continue
+        label = normalize_label(final_answer)
+        if label is not None:
+            votes.append(label)
     if not votes:
         return None
     counts = {label: votes.count(label) for label in VALID_LABELS}
@@ -60,6 +84,8 @@ def evaluate(input_path):
             if not line:
                 continue
             record = json.loads(line)
+            if record.get("index") in IGNORED_INDICES:
+                continue
             total += 1
 
             ground_truth = (record.get("answer") or "").strip().lower()
@@ -133,8 +159,8 @@ def main():
             "eval_data/test_same_python_java.jsonl.mcts.Qwen2.5-Coder-3B-Instruct.20260617030600.jsonl"
         )
 
-    output_path = Path(sys.argv[2]) if len(sys.argv) > 2 else input_path.with_suffix(
-        input_path.suffix + ".eval_results.txt"
+    output_path = Path(sys.argv[2]) if len(sys.argv) > 2 else input_path.with_name(
+        input_path.name + "_result"
     )
 
     stats = evaluate(input_path)
