@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import json
 import os.path as osp
+import multiprocessing
 from tqdm import tqdm
 from termcolor import colored
 from functools import partial
@@ -31,6 +32,7 @@ class Solver(BaseModel):
     need_value_func: bool = False
     max_agent_steps: int = 1
     reward_model: Optional[Any] = None
+    process_pool: Optional[Any] = None
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -46,7 +48,25 @@ class Solver(BaseModel):
         elif self.config.mode == "mcts":
             self.max_agent_steps = self.config.iterations
             self.config.step_beam_width = 1
-            
+
+        # Reused for the lifetime of the solver instead of being recreated on
+        # every step. Recreating it per-step meant repeatedly fork()-ing off
+        # of a process that already holds an initialized CUDA/vLLM context,
+        # which is unsafe and was causing sporadic interpreter-level crashes
+        # (e.g. "Objects/dictobject.c: bad argument to internal function")
+        # that killed the whole run. Using the spawn context avoids forking
+        # a CUDA-initialized process altogether.
+        self.process_pool = ProcessPool(
+            max_workers=12,
+            context=multiprocessing.get_context("spawn"),
+        )
+
+    def close(self) -> None:
+        if self.process_pool is not None:
+            self.process_pool.stop()
+            self.process_pool.join()
+            self.process_pool = None
+
 
     @field_validator("config")
     def validate_config(cls, cfg: Any):
@@ -117,12 +137,10 @@ class Solver(BaseModel):
         valid_agents: List[BaseTree],
     ) -> List[BaseTree]:
         post_agents = []
-        #with ProcessPool(max_workers=min(len(valid_agents), os.cpu_count())) as pool:
-        with ProcessPool(max_workers=12) as pool:
-            future = pool.map(self.__class__.processor, valid_agents, outputs, timeout=TIMEOUT_SECONDS)
-            iterator = future.result()
-        
-        progress_bar = tqdm(total=len(valid_agents), desc="generate_postprocess")  
+        future = self.process_pool.map(self.__class__.processor, valid_agents, outputs, timeout=TIMEOUT_SECONDS)
+        iterator = future.result()
+
+        progress_bar = tqdm(total=len(valid_agents), desc="generate_postprocess")
         while True:
             try:
                 result = next(iterator)

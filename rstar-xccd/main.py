@@ -116,3 +116,5 @@ if __name__ == '__main__':
         elapsed_minutes = round((time.time() - start_time) / 60, 2)
         writer.write(json.dumps({"index": len(data) + 1, "time": elapsed_minutes}, ensure_ascii=False) + '\n')
         writer.flush()
+
+    solver.close()
