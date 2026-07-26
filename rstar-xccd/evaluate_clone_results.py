@@ -19,7 +19,8 @@ the requested label instead of the literal word (e.g. "semantic clone" or
 to the intended label so they still count as a vote. A question is counted as
 "no judgment" (and contributes to the response-rate count) only if no leaf
 node in its tree produced a final_answer that normalizes to "clone" or
-"non-clone".
+"non-clone". Lines without a "question" field (e.g. the run's trailing
+timing/footer record) are skipped entirely rather than counted as instances.
 """
 import json
 import sys
@@ -31,7 +32,6 @@ FAILURE_PLACEHOLDERS = {
     "fail to generate parsable text for next step.",
 }
 VALID_LABELS = {"clone", "non-clone"}
-IGNORED_INDICES = {1001}
 
 
 def node_sort_key(tag):
@@ -84,7 +84,7 @@ def evaluate(input_path):
             if not line:
                 continue
             record = json.loads(line)
-            if record.get("index") in IGNORED_INDICES:
+            if "question" not in record:
                 continue
             total += 1
 
