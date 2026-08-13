@@ -1,31 +1,159 @@
 # ──────────────────────────────────────────────────────────────────────────
 # async_chatgpt.py
 # ──────────────────────────────────────────────────────────────────────────
-import os, json, pathlib, asyncio, aiohttp, tiktoken, torch
+import os, sys, json, time, pathlib, asyncio, aiohttp, tiktoken, torch
 import argparse
 from typing import List, Tuple, Any
 
-from analyse_reasoning import Analyser
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from peft import PeftModel
+from omegaconf import OmegaConf
+from config import BaseConfig
 
-from analyse_reasoning_new import Analyser
+from vllm import LLM, SamplingParams
+from vllm.lora.request import LoRARequest
 
 # ---------------------------------------------------------------------
 # GLOBALS
 # ---------------------------------------------------------------------
 current_location = pathlib.Path(__file__).parent.resolve()
+upper_level_path = current_location.parent
 
+# rstar-xccd's own clone-detection evaluator (precision/recall/F1 over
+# question/answer/rstar records), reused as-is instead of the old
+# analyse_reasoning.py / analyse_reasoning_new.py Analyser classes.
+sys.path.insert(0, str(upper_level_path))
+from evaluate_clone_results import evaluate as run_clone_evaluation, format_report as format_clone_eval_report
+
+# ---------------------------------------------------------------------
+# Prompt: adapted from rstar_deepthink/few_shots/mcts_prompt.json's
+# pot_format_instructions. Same task framing and the same requirement to put
+# the final clone/non-clone decision in \boxed{...} (so evaluate_clone_results
+# can read it), but with the <analysis>/<code>/<output>/<answer> step tags and
+# the code-execution instructions stripped out -- this is a single generate()
+# call, not a step-by-step agent loop, so there is no step to tag and no
+# interpreter to hand code off to.
 system_prompt = (
-    "You are a code analysis assistant for cross-language clone detection. "
-    "Analyze the user's code snippets and respond *only* in JSON format."
+    "You are a powerful code analysis agent with broad software engineering "
+    "knowledge and strong programming skills. Your task is to determine "
+    "whether two code snippets written in different programming languages "
+    "are semantic code clones.\n\n"
+    "A semantic code clone means that two code snippets implement the same "
+    "or highly similar functionality, even if they are written in different "
+    "programming languages, use different syntax, use different variable "
+    "names, or follow different implementation styles.\n\n"
+    "!!! Remember:\n"
+    "1. Focus on semantic behavior, not surface-level syntax.\n"
+    "2. Consider input type, output type, main logic, edge cases, and "
+    "whether both snippets produce equivalent outputs for equivalent valid "
+    "inputs.\n"
+    "3. Avoid relying only on variable names, formatting, comments, "
+    "programming language syntax, or superficial structural similarity.\n"
+    "4. The final decision must be either clone or non-clone. Put the final "
+    "decision inside \\boxed{}.\n\n"
+    "Use this format:\n"
+    "Analysis: a brief comparison of the two snippets' behavior.\n"
+    "Final decision: \\boxed{clone} or \\boxed{non-clone}"
 )
+
+# rstar_deepthink/few_shots/few_shot_imprvoed.json's two canonical examples
+# (same Code1/Code2 pairs, same clone/non-clone labels), rewritten as a
+# direct single-turn answer instead of the <analysis>/<code>/<output>/<answer>
+# step transcript -- i.e. the model is shown how to answer directly, not how
+# to solve the problem step by step.
+FEW_SHOT_EXAMPLES = [
+    (
+        "Question: Determine whether the following two code snippets are semantic code clones.\n\n"
+        "Code 1: Python\n"
+        "```python\n"
+        "n = int(input())\n"
+        "if n % 2 == 0:\n"
+        "    print(\"Even\")\n"
+        "else:\n"
+        "    print(\"Odd\")\n"
+        "```\n\n"
+        "Code 2: Java\n"
+        "```java\n"
+        "import java.util.Scanner;\n\n"
+        "public class Main {\n"
+        "    public static void main(String[] args) {\n"
+        "        Scanner sc = new Scanner(System.in);\n"
+        "        int n = sc.nextInt();\n"
+        "        if (n % 2 == 0) {\n"
+        "            System.out.println(\"Even\");\n"
+        "        } else {\n"
+        "            System.out.println(\"Odd\");\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+        "```"
+    ),
+    (
+        "Analysis: Both snippets read a single integer from standard input and print "
+        "\"Even\" if it is divisible by 2 and \"Odd\" otherwise. Their input type, output "
+        "type, and branching logic match exactly.\n"
+        "Final decision: \\boxed{clone}"
+    ),
+    (
+        "Question: Determine whether the following two code snippets are semantic code clones.\n\n"
+        "Code 1: Python\n"
+        "```python\n"
+        "n = int(input())\n"
+        "if n % 2 == 0:\n"
+        "    print(\"Even\")\n"
+        "else:\n"
+        "    print(\"Odd\")\n"
+        "```\n\n"
+        "Code 2: Java\n"
+        "```java\n"
+        "import java.util.Scanner;\n\n"
+        "public class Main {\n"
+        "    public static void main(String[] args) {\n"
+        "        Scanner sc = new Scanner(System.in);\n"
+        "        String s = sc.next();\n"
+        "        StringBuilder sb = new StringBuilder(s);\n"
+        "        sb.reverse();\n"
+        "        System.out.println(sb.toString());\n"
+        "    }\n"
+        "}\n"
+        "```"
+    ),
+    (
+        "Analysis: Code 1 reads a single integer from standard input and prints \"Even\" "
+        "or \"Odd\" based on its parity. Code 2 reads a string and prints it reversed. "
+        "The two snippets operate on different input types and implement unrelated "
+        "functionality.\n"
+        "Final decision: \\boxed{non-clone}"
+    ),
+]
+
+
+def extract_boxed_final_answer(text: str) -> str:
+    """Pull the content of the last \\boxed{...} out of a model response.
+
+    Lightweight equivalent of rstar_deepthink.agents.utils.extract_math_answer
+    / extract_boxed_answer, without pulling in that module's much heavier
+    import chain (transformers/sympy/math_evaluation/etc.) just for brace
+    matching. Falls back to the full stripped text when there's no \\boxed{},
+    which evaluate_clone_results.normalize_label() can still substring-match
+    against ("clone"/"non-clone"/paraphrases).
+    """
+    idx = text.rfind(r"\boxed{")
+    if idx == -1:
+        return text.strip()
+    start = idx + len(r"\boxed{")
+    depth = 1
+    i = start
+    while i < len(text) and depth > 0:
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+        i += 1
+    return text[start:i - 1].strip()
 
 
 # ---------------------------------------------------------------------
 # Loading tiktoken ofline for phi3-small
 # ---------------------------------------------------------------------
-upper_level_path = current_location.parent
 tiktoken_cache_dir = upper_level_path /"tiktoken_cache"
 os.environ["TIKTOKEN_CACHE_DIR"] = str(tiktoken_cache_dir)
 
@@ -41,104 +169,102 @@ local_models = {
     "mini-f3":"phi3-mini-v3-merged",
     "mini":"Phi-3-mini-128k-instruct",
     "qwen23b":"Qwen2.5-Coder-3B-Instruct",
-    "qwen-f2": "qwen-coder-pyjava-merged"
+    "qwen-f2": "qwen-coder-pyjava-merged",
 
+    # >5B parameter local models
+    "phi3-small": "Phi-3-small-128k-instruct",
+    "qwen25-7b": "Qwen2.5-Coder-7B-Instruct",
+    "qwen3-8b": "Qwen3-8B",
+    "deepseek-6.7b": "deepseek-coder-6.7b-instruct",
+    "deepseek-7b-v1.5": "deepseek-coder-7b-instruct-v1.5",
 }
 
 
-# quantization_config = BitsAndBytesConfig(
-#     load_in_8bit=True,
-#     llm_int8_threshold=6.0,
-#     llm_int8_skip_modules=None,
-# )
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_compute_dtype=torch.bfloat16,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_use_double_quant=True
-)
-
-
 class OfflineRequest:
-    def __init__(self,  model="Phi-3-medium-128k-instruct", stream=False):
-        self.model_path = upper_level_path/"models" / model
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_path,
-            quantization_config = quantization_config,    
-            low_cpu_mem_usage=True
+    def __init__(
+        self,
+        model="Phi-3-medium-128k-instruct",
+        stream=False,
+        tensor_parallel_size=1,
+        gpu_memory_utilization=0.90,
+        max_model_len=16384,
+        max_tokens=3000,
+        temperature=0.0,
+        enable_lora=False,
+    ):
+        self.model_path = str(upper_level_path / "models" / model)
+        self.llm = LLM(
+            model=self.model_path,
+            tensor_parallel_size=tensor_parallel_size,
+            trust_remote_code=True,
+            gpu_memory_utilization=gpu_memory_utilization,
+            max_model_len=max_model_len,
+            dtype="bfloat16",
+            enforce_eager=True,
+            distributed_executor_backend="ray" if tensor_parallel_size > 1 else None,
+            enable_lora=enable_lora,
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+        self.tokenizer = self.llm.get_tokenizer()
+        self.sampling_params = SamplingParams(
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        # Set by FineTunedModelInference; left None here so vLLM just uses
+        # the base model.
+        self.lora_request = None
         self.stream = stream
-        
+
         self.results = []
 
-    def _send_request(self, prompt_id, prompt):
-        def build_prompt_text(tokenizer, system_prompt, user_prompt):
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-            if hasattr(tokenizer, "apply_chat_template"):
-                return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            # Phi-3-style fallback
-            return f"<|system|>\n{system_prompt}\n<|user|>\n{user_prompt}\n<|assistant|>\n"
-
-        prompt_text = build_prompt_text(self.tokenizer, system_prompt, prompt)
-
-        self.tokenizer.padding_side = "left"
-        if self.tokenizer.pad_token_id is None:
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-
-        model_max = getattr(self.tokenizer, "model_max_length", 16384)
-        if model_max is None or model_max > 200_000:
-            model_max = 16384
-        max_length = model_max  # or min(model_max, 131072) if you want a cap
-
-        encoded = self.tokenizer(
-            prompt_text,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=max_length,
+    def _build_prompt_text(self, prompt):
+        messages = [{"role": "system", "content": system_prompt}]
+        for i in range(0, len(FEW_SHOT_EXAMPLES), 2):
+            messages.append({"role": "user", "content": FEW_SHOT_EXAMPLES[i]})
+            messages.append({"role": "assistant", "content": FEW_SHOT_EXAMPLES[i + 1]})
+        messages.append({"role": "user", "content": prompt})
+        # enable_thinking=False keeps Qwen3 from emitting a <think> block
+        # instead of a direct answer; harmless extra template kwarg for
+        # every other model's chat template (mirrors rstar_prompt_wrap).
+        return self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True, enable_thinking=False,
         )
-        encoded = {k: v.to("cuda") for k, v in encoded.items()}
-        input_len = encoded["input_ids"].shape[1]
 
-        # EOS / terminators
-        eos_ids = [self.tokenizer.eos_token_id]
-        for tok in ["<|end|>", "<|endoftext|>", "<|eot_id|>"]:
-            tid = self.tokenizer.convert_tokens_to_ids(tok)
-            if tid is not None and tid != self.tokenizer.unk_token_id:
-                eos_ids.append(tid)
-        eos_ids = sorted({i for i in eos_ids if i is not None})
-
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **encoded,
-                max_new_tokens=3000,
-                do_sample=False,
-                pad_token_id=self.tokenizer.pad_token_id,
-                eos_token_id=eos_ids,
-                use_cache=True,
-            )
-
-        response = self.tokenizer.decode(outputs[0, input_len:], skip_special_tokens=True)
-        print(f"[{prompt_id}] {response}\n")
-        return prompt_id, response
-            
     def process_prompts(self, prompts, requested_samples_file, output_file):
-        # requested_ids = self._get_requested_ids(requested_samples_file)
-        for prompt in prompts:                
-            result = self._send_request(prompt[0], prompt[1])
-            sample_id, conversation = self._post_process_response(result, prompt)
+        if not prompts:
+            return
+        # vLLM batches all prompts across the tensor-parallel GPUs in one
+        # call instead of the previous one-request-at-a-time HF .generate()
+        # loop.
+        prompt_texts = [self._build_prompt_text(prompt[1]) for prompt in prompts]
+        outputs = self.llm.generate(
+            prompt_texts,
+            self.sampling_params,
+            lora_request=self.lora_request,
+        )
 
-            entry = {"idx": sample_id, "text": conversation}
-            
-            with open(output_file, "a", encoding="utf-8") as fout:
+        with open(output_file, "a", encoding="utf-8") as fout:
+            for (prompt_id, prompt, row), output in zip(prompts, outputs):
+                response = output.outputs[0].text
+                print(f"[{prompt_id}] {response}\n")
+                entry = self._build_output_entry(prompt_id, prompt, response, row)
                 json.dump(entry, fout, ensure_ascii=False)
                 fout.write("\n")
 
-
+    def _build_output_entry(self, prompt_id, prompt, response, row: dict) -> dict:
+        _, conversation = self._post_process_response((prompt_id, response), prompt)
+        entry = {"idx": prompt_id, "text": conversation}
+        # Carry the ground-truth fields through when the source row has them
+        # (rstar-xccd's eval_data/*.jsonl schema), so the output file is a
+        # standalone input to evaluate_clone_results.py.
+        if "question" in row:
+            entry["question"] = row["question"]
+        if "answer" in row:
+            entry["answer"] = row["answer"]
+        # evaluate_clone_results.py expects a "rstar" tree of {tag: {final_answer}}
+        # nodes (majority-voted across an MCTS search); pure inference only ever
+        # produces one candidate, so a single node "1" is that whole tree.
+        entry["rstar"] = {"1": {"final_answer": extract_boxed_final_answer(response)}}
+        return entry
 
     @staticmethod
     def _post_process_response(result: dict, prompt: str) -> str:
@@ -146,82 +272,62 @@ class OfflineRequest:
             f"|user|\n{prompt}\n|assistant|\n"
             f"{result[1].strip()}"
         )
-    
+
 
 class QwenOfflineRequest(OfflineRequest):
-    print("Inferencing using Qwen Coder Model. Begins .......")
-    def _send_request(self, prompt_id, prompt):
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ]
-        prompt_text = self.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-
-        self.tokenizer.padding_side = "left"
-        if self.tokenizer.pad_token_id is None:
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-
-        encoded = self.tokenizer(
-            prompt_text,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=16384,
-        )
-        encoded = {k: v.to("cuda") for k, v in encoded.items()}
-        input_len = encoded["input_ids"].shape[1]
-
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **encoded,
-                max_new_tokens=3000,
-                do_sample=False,
-                pad_token_id=self.tokenizer.pad_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
-                use_cache=True,                            
-            )
-
-            response = self.tokenizer.decode(outputs[0, input_len:], skip_special_tokens=True)
-            print(f"[{prompt_id}] {response}\n")
-            return prompt_id, response
+    # vLLM applies Qwen's own chat template and EOS handling automatically,
+    # so no per-model override is needed here (unlike the old HF-generate
+    # path, which had to hand-roll padding/EOS logic per model).
+    pass
 
 
 class FineTunedModelInference(OfflineRequest):
-    # Complete inheritance
-    def __init__(self, lora_path, model="Phi-3-medium-128k-instruct", stream=False):
-        super().__init__(model=model, stream=stream)
-        self.model_path = upper_level_path/"models" / model
-        self.peft_path = upper_level_path / "pure_inference_results" / lora_path
-        self.base_model = AutoModelForCausalLM.from_pretrained(
-            self.model_path,
-            trust_remote_code=True,
+    def __init__(
+        self,
+        lora_path,
+        model="Phi-3-medium-128k-instruct",
+        stream=False,
+        tensor_parallel_size=1,
+        gpu_memory_utilization=0.90,
+        max_model_len=16384,
+        max_tokens=3000,
+        temperature=0.0,
+    ):
+        super().__init__(
+            model=model,
+            stream=stream,
+            tensor_parallel_size=tensor_parallel_size,
+            gpu_memory_utilization=gpu_memory_utilization,
+            max_model_len=max_model_len,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            enable_lora=True,
         )
-        self.model = PeftModel.from_pretrained(self.base_model, self.peft_path)
-        self.model = self.model.merge_and_unload()
-        self.model.save_pretrained("merged_model")
-        self.model = AutoModelForCausalLM.from_pretrained(
-            "merged_model",
-            quantization_config=quantization_config,
-            attn_implementation="flash_attention_2",
-            trust_remote_code=True,
-            low_cpu_mem_usage=True
-        )
-        self.model.eval()
-    
-
+        # vLLM loads and applies the LoRA adapter directly at generate time
+        # instead of the old peft merge_and_unload() + save_pretrained()
+        # round trip through a "merged_model" dir.
+        self.peft_path = str(upper_level_path / "pure_inference_results" / lora_path)
+        self.lora_request = LoRARequest("adapter", 1, self.peft_path)
 
 
 class CodeCloneDetection:
     def __init__(
         self,
         data_file: str,
-        temperature: float = 0.7,
+        temperature: float = 0.0,
         model: str = "Phi-3-medium-128k-instruct",
-        output_file: str = None
+        output_file: str = None,
+        tensor_parallel_size: int = 1,
+        gpu_memory_utilization: float = 0.90,
+        max_model_len: int = 16384,
+        max_tokens: int = 3000,
     ):
         self.model = model
+        self.temperature = temperature
+        self.tensor_parallel_size = tensor_parallel_size
+        self.gpu_memory_utilization = gpu_memory_utilization
+        self.max_model_len = max_model_len
+        self.max_tokens = max_tokens
         self.data_file = data_file
         self.data = self._read_data(data_file)
         self.output_file = output_file 
@@ -229,24 +335,32 @@ class CodeCloneDetection:
         # write a code to check if self.output_file exists and the extension is .jsonl. If the condition satisties, make a list of all all indexes
         if os.path.exists(self.output_file) and self.output_file.endswith(".jsonl"):
             output = self._read_data(self.output_file)
-            requested_indices = [d["idx"] for d in output]
+            # The trailing {"index": ..., "time": ...} timing record (see
+            # main()) has no "idx" -- skip it rather than KeyError on resume.
+            requested_indices = [d["idx"] for d in output if "idx" in d]
 
             
         if requested_indices is None:
-            self.prompts = [
-            self._make_prompt(d["index"], d["code1"], d["code2"]) for d in self.data
-            ]
+            self.prompts = [self._make_prompt_from_row(d) for d in self.data]
             assert 1==1
         else:
             self.prompts = [
-                self._make_prompt(d["index"], d["code1"], d["code2"])
+                self._make_prompt_from_row(d)
                 for d in self.data if d["index"] not in requested_indices
             ]
         
         self.gpt = self._create_gpt()
 
     def _create_gpt(self):
-        return OfflineRequest(model=self.model, stream=False)
+        return OfflineRequest(
+            model=self.model,
+            stream=False,
+            tensor_parallel_size=self.tensor_parallel_size,
+            gpu_memory_utilization=self.gpu_memory_utilization,
+            max_model_len=self.max_model_len,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+        )
 
 
 #     # ---------- data helpers -----------------------------------------
@@ -255,34 +369,27 @@ class CodeCloneDetection:
         with open(data_file, "r") as f:
             return [json.loads(line) for line in f]
 
+    def _make_prompt_from_row(self, d: dict) -> Tuple[int, str, dict]:
+        # rstar-xccd's eval_data/*.jsonl rows are pre-formatted into a single
+        # "question" string (both snippets already embedded as fenced code
+        # blocks) rather than separate code1/code2 fields; splice that
+        # straight into the code section of the prompt below instead of
+        # rebuilding it from code1/code2.
+        if "code1" in d and "code2" in d:
+            code_section = f"Code1:\n{d['code1']}\n\nCode2:\n{d['code2']}"
+        else:
+            code_section = d["question"]
+        sample_id, prompt = self._make_prompt(d["index"], code_section)
+        return sample_id, prompt, d
+
     @staticmethod
-    def _make_prompt(sample_id: int, code1: str, code2: str) -> Tuple[int, str]:
-        # user_prompt = (
-        #     "Conduct code-clone detection using the following criteria:\n"
-        #     "Compare the following two code snippets with regard to:\n"
-        #     "1. Functionality comparison\n"
-        #     "2. Mathematical logic comparison\n"
-        #     "3. Similarity analysis\n"
-        #     "4. Code written in different languages can still be clones, so do not take programming-language differences into account in your comparison\n"
-        #     "4. Conclusion on clone status (codes may be in different languages).\n\n"
-        #     "In the conclusion, clearly state Yes for code clones and No for non-clones "
-        #     "before writing the rest of the conclusion.\n\n"
-        #     "Do not include any explanation outside the JSON.\n\n"
-        #     f"Code1:\n{code1}\n\nCode2:\n{code2}"
-        # )
-        user_prompt = (
-            "Conduct code-clone detection using the following criteria:\n"
-            "Compare the following two code snippets with regard to:\n"
-            "1. Functionality comparison\n"
-            "2. Mathematical logic comparison\n"
-            "3. Structural differences\n"
-            "4. Similarity analysis\n"
-            "5. Conclusion on clone status (codes may be in different languages).\n\n"
-            "In the conclusion, clearly state Yes for code clones and No for non-clones\n"
-            "Do not include any explanation outside the JSON.\n\n"
-            f"Code1:\n{code1}\n\nCode2:\n{code2}"
-        )
-        return sample_id, user_prompt
+    def _make_prompt(sample_id: int, code_section: str) -> Tuple[int, str]:
+        # All the task instructions (criteria, format, the \boxed{} decision
+        # requirement) now live in the system prompt + few-shot examples, the
+        # same split rstar_prompt_wrap uses (pot_format_instructions as the
+        # system turn, pot_suffix as the final user turn). The user turn here
+        # is just the question itself, matching pot_suffix's "Question: {input}".
+        return sample_id, f"Question: {code_section}"
 
 #     # ---------- main entry -------------------------------------------
 #     def run_processing(self, requested_file: str, output_file: str):
@@ -300,109 +407,184 @@ class CodeCloneDetectionFineTuned(CodeCloneDetection):
         self,
         lora_path,
         data_file: str,
-        temperature: float = 0.7,
+        temperature: float = 0.0,
         model: str = "Phi-3-medium-128k-instruct",
         output_file: str = None,
+        tensor_parallel_size: int = 1,
+        gpu_memory_utilization: float = 0.90,
+        max_model_len: int = 16384,
+        max_tokens: int = 3000,
     ):
         self.lora_path = lora_path
-        super().__init__(data_file, temperature, model, output_file)
+        super().__init__(
+            data_file, temperature, model, output_file,
+            tensor_parallel_size, gpu_memory_utilization, max_model_len, max_tokens,
+        )
 
     def _create_gpt(self):
-        return FineTunedModelInference(self.lora_path, model=self.model, stream=False)
+        return FineTunedModelInference(
+            self.lora_path,
+            model=self.model,
+            stream=False,
+            tensor_parallel_size=self.tensor_parallel_size,
+            gpu_memory_utilization=self.gpu_memory_utilization,
+            max_model_len=self.max_model_len,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+        )
 
 
 class CodeCloneDetectionQwenCoder(CodeCloneDetection):
     def __init__(
         self,
         data_file: str,
-        temperature: float = 0.7,
+        temperature: float = 0.0,
         model: str = "qwen2.5-Coder-3B-Instruct",
         output_file: str = None,
+        tensor_parallel_size: int = 1,
+        gpu_memory_utilization: float = 0.90,
+        max_model_len: int = 16384,
+        max_tokens: int = 3000,
     ):
-        super().__init__(data_file, temperature, model, output_file)
+        super().__init__(
+            data_file, temperature, model, output_file,
+            tensor_parallel_size, gpu_memory_utilization, max_model_len, max_tokens,
+        )
 
     def _create_gpt(self):
-        return QwenOfflineRequest(model=self.model, stream=False)
+        return QwenOfflineRequest(
+            model=self.model,
+            stream=False,
+            tensor_parallel_size=self.tensor_parallel_size,
+            gpu_memory_utilization=self.gpu_memory_utilization,
+            max_model_len=self.max_model_len,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+        )
 
 
 # # ---------------------------------------------------------------------
 # # MAIN
 # # ---------------------------------------------------------------------
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Offline clone-detection inference, configured via a YAML file (see pure_inference/config/)."
+    )
+    parser.add_argument(
+        "--custom_cfg", type=str, default=None,
+        help="Path to a YAML config file (e.g. config/qwen25_3b.yaml), merged over the BaseConfig defaults"
+    )
+    # The following all override whatever the config file (or its defaults) set.
+    parser.add_argument("-d", "--datafile", type=str, default=None, help="Path to the JSONL input dataset")
+    parser.add_argument("-m", "--model", type=str, default=None, help="Model to be loaded")
+    parser.add_argument("-f", "--finetuned", action="store_true", default=None, help="Use the fine-tuned/LoRA model")
+    parser.add_argument("-g", "--num_gpus", type=int, default=None, help="Number of GPUs for vLLM tensor-parallel inference")
+    return parser.parse_args()
+
+
+def load_config(args) -> "OmegaConf":
+    config = OmegaConf.structured(BaseConfig)
+    if args.custom_cfg:
+        custom_config = OmegaConf.load(args.custom_cfg)
+        config = OmegaConf.merge(config, custom_config)
+    config = OmegaConf.create(OmegaConf.to_yaml(config, resolve=True))
+
+    if args.datafile is not None:
+        config.datafile = args.datafile
+    if args.model is not None:
+        config.model = args.model
+    if args.finetuned is not None:
+        config.finetuned = args.finetuned
+    if args.num_gpus is not None:
+        config.num_gpus = args.num_gpus
+    return config
+
+
 def main():
+    start_time = time.time()
 
     checkpoint_versions = {
         "v2" : "mini-v2-fine-tuned/checkpoint-3340"
     }
 
+    args = parse_args()
+    config = load_config(args)
+    print(config)
 
-    parser = argparse.ArgumentParser(
-        description="Simple example showing argparse usage"
-    )
-    parser.add_argument(
-        "-d", "--datafile",
-        help="Path to the JSONL input dataset",
-        required=True
-    )
-    parser.add_argument("-m","--model", help="Model to be loaded")
-    # parser.add_argument("-o","--output", help="The inference output results")
-    parser.add_argument("-f", "--finetuned", help="Choose normal model or fine-tuned one")
+    if not config.datafile:
+        raise ValueError("datafile must be set via --custom_cfg or -d/--datafile")
 
-    
-    args = parser.parse_args()
+    # All run outputs (raw generations, evaluation metrics, missing/correct
+    # index lists) live under this one directory instead of being scattered
+    # across eval_data/, extended-experiments/test_files/, etc.
+    results_dir = os.path.join(current_location, "offline_results")
+    os.makedirs(results_dir, exist_ok=True)
 
-    # output = os.path.join(current_location, "offline_results", args.output)
-    data_file_path = os.path.join(current_location, args.datafile)
-    output = os.path.join(current_location, f"{args.datafile}_{args.model}_inference_result.jsonl")
-    data_stem = os.path.splitext(data_file_path)[0]    
-    ids_filename = f"{data_stem}_ids.txt" 
+    data_file_path = os.path.join(current_location, config.datafile)
+    datafile_basename = os.path.basename(config.datafile)
+    datafile_stem = os.path.splitext(datafile_basename)[0]
+    output = os.path.join(results_dir, f"{datafile_basename}_{config.model}_inference_result.jsonl")
+    ids_filename = f"{datafile_stem}_ids.txt"
 
     print(f"code input infor: the output path:{output} \n data_path:{data_file_path} \n ids_file:{ids_filename}")
-    if args.finetuned:
+
+    gpt_kwargs = dict(
+        data_file=data_file_path,
+        output_file=output,
+        tensor_parallel_size=config.num_gpus,
+        gpu_memory_utilization=config.gpu_memory_utilization,
+        max_model_len=config.max_model_len,
+        max_tokens=config.max_tokens,
+        temperature=config.temperature,
+    )
+
+    if config.finetuned:
         print("Running fine-tuned version")
         ccd = CodeCloneDetectionFineTuned(
-            lora_path=checkpoint_versions[args.checkpoint],
+            lora_path=checkpoint_versions[config.lora_checkpoint],
             model="Phi-3-mini-128k-instruct",
-            data_file=data_file_path,
-            output_file= output
+            **gpt_kwargs,
         )
-    elif "qwen" in args.model:
+    elif "qwen" in config.model:
         print("Running Qwen Coder version")
         ccd = CodeCloneDetectionQwenCoder(
-            model=local_models[args.model],
-            data_file=data_file_path,
-            output_file= output
+            model=local_models[config.model],
+            **gpt_kwargs,
         )
     else:
         print("Running original version")
         ccd = CodeCloneDetection(
-            model=local_models[args.model],
-            data_file=data_file_path,
-            output_file= output
+            model=local_models[config.model],
+            **gpt_kwargs,
         )
     
 
     ccd.run_processing(
-        requested_samples_file=os.path.join(
-            current_location, "offlone_results", ids_filename
-        ),
+        requested_samples_file=os.path.join(results_dir, ids_filename),
         output_file= output
     )
-    # analyser = Analyser(
-    #     os.path.join(current_location, 'java_test_clone_2.jsonl'),
-    #     os.path.join(current_location, 'results', 'results_for_java2.txt')
-    # )
 
-    analyser = Analyser(
-        data_file_path,
-        output
-    )
-    metric_description_name = args.datafile.split("/")[-1]
-    analyser.compute_metrics(
-        ouput_dir= os.path.join(current_location, "extended-experiments/test_files"),
-        description=f"{metric_description_name}_{args.model}_evaluation_result",
-        save_to_file=True
-    )
-    analyser.compute_missing_samples(type=data_file_path)
+    # Same trailing footer record main.py writes: {"index": len(data)+1,
+    # "time": elapsed_minutes} as the last line of the output file.
+    # evaluate_clone_results.evaluate() already skips any line without a
+    # "question" field, so this line is transparent to it (that's literally
+    # called out in its own docstring as the expected trailing footer).
+    elapsed_minutes = round((time.time() - start_time) / 60, 2)
+    with open(output, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"index": len(ccd.data) + 1, "time": elapsed_minutes}, ensure_ascii=False) + "\n")
+
+    # rstar-xccd's own evaluator (precision/recall/F1/response-rate over
+    # question/answer/rstar records) instead of analyse_reasoning.py /
+    # analyse_reasoning_new.py. Only meaningful for rows carrying rstar-xccd's
+    # question/answer schema -- evaluate_clone_results skips any line without
+    # a "question" field, so a code1/code2-schema run just yields zero counts.
+    stats = run_clone_evaluation(output)
+    report = format_clone_eval_report(stats, output)
+    print(report)
+    report_path = os.path.join(results_dir, f"{datafile_basename}_{config.model}_evaluate_result.txt")
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(report)
+    print(f"Results written to: {report_path}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,8 @@
+datafile: "smoke_test_data/qwen_smoke_test.jsonl"
+model: "qwen23b"
+
+num_gpus: 1
+gpu_memory_utilization: 0.90
+max_model_len: 16384
+max_tokens: 3000
+temperature: 0.0

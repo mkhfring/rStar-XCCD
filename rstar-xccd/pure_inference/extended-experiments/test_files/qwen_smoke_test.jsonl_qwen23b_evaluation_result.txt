@@ -1,6 +1,0 @@
-qwen_smoke_test.jsonl_qwen23b_evaluation_result
-
-F1 score: 0.0
-Precision: 0.0
-Recall: 0.0
-Response Rate: 0.0

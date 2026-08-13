@@ -1,0 +1,11 @@
+# Qwen2.5-Coder-7B-Instruct, 2 GPU (tensor-parallel).
+# Mirrors the tp/memory settings used for 7B+ models in rstar-xccd/config
+# (e.g. my_test_direct_qwen25-7b-2gpu.yaml).
+datafile: "smoke_test_data/qwen_smoke_test.jsonl"
+model: "qwen25-7b"
+
+num_gpus: 2
+gpu_memory_utilization: 0.90
+max_model_len: 16384
+max_tokens: 3000
+temperature: 0.0

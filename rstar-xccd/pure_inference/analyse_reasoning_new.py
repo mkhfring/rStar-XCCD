@@ -144,7 +144,16 @@ class Analyser:
 
     
     def _extract_ground_truth_labels(self):
-        samples_label = [{sample['index']: sample['label']} for sample in self.test_data]
+        # rstar-xccd's eval_data/*.jsonl rows carry the ground truth as an
+        # "answer" string ("clone"/"non-clone") rather than an int "label";
+        # normalize both to the 1/0 label extract_llm_result() also returns.
+        samples_label = []
+        for sample in self.test_data:
+            if "label" in sample:
+                label = sample["label"]
+            else:
+                label = 1 if str(sample["answer"]).strip().lower() == "clone" else 0
+            samples_label.append({sample["index"]: label})
         return samples_label
     
     def compute_metrics(self, ouput_dir, description = None, save_to_file=False):

@@ -1,0 +1,11 @@
+# Same as config/qwen25_3b.yaml, but points at a real rstar-xccd eval_data
+# file (index/question/answer schema) instead of the code1/code2 smoke-test
+# data, to exercise the schema-detection path in _make_prompt_from_row.
+datafile: "../eval_data/test_same_python_java_sample10.jsonl"
+model: "qwen23b"
+
+num_gpus: 1
+gpu_memory_utilization: 0.90
+max_model_len: 16384
+max_tokens: 3000
+temperature: 0.0
