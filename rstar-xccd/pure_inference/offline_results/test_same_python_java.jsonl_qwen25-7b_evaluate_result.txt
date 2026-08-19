@@ -9,11 +9,11 @@ Response rate (instances with no clone/non-clone final judgment / total instance
   1 / 1000 = 0.0010
 
 Confusion matrix (computed only over judged instances):
-  True Positive  (predicted clone,     actual clone):     492
-  False Positive (predicted clone,     actual non-clone): 0
-  True Negative  (predicted non-clone, actual non-clone): 499
-  False Negative (predicted non-clone, actual clone):     8
+  True Positive  (predicted clone,     actual clone):     498
+  False Positive (predicted clone,     actual non-clone): 2
+  True Negative  (predicted non-clone, actual non-clone): 497
+  False Negative (predicted non-clone, actual clone):     2
 
-Precision: 1.0000
-Recall:    0.9840
-F1 score:  0.9919
+Precision: 0.9960
+Recall:    0.9960
+F1 score:  0.9960

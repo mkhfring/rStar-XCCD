@@ -54,78 +54,6 @@ system_prompt = (
     "Final decision: \\boxed{clone} or \\boxed{non-clone}"
 )
 
-# rstar_deepthink/few_shots/few_shot_imprvoed.json's two canonical examples
-# (same Code1/Code2 pairs, same clone/non-clone labels), rewritten as a
-# direct single-turn answer instead of the <analysis>/<code>/<output>/<answer>
-# step transcript -- i.e. the model is shown how to answer directly, not how
-# to solve the problem step by step.
-FEW_SHOT_EXAMPLES = [
-    (
-        "Question: Determine whether the following two code snippets are semantic code clones.\n\n"
-        "Code 1: Python\n"
-        "```python\n"
-        "n = int(input())\n"
-        "if n % 2 == 0:\n"
-        "    print(\"Even\")\n"
-        "else:\n"
-        "    print(\"Odd\")\n"
-        "```\n\n"
-        "Code 2: Java\n"
-        "```java\n"
-        "import java.util.Scanner;\n\n"
-        "public class Main {\n"
-        "    public static void main(String[] args) {\n"
-        "        Scanner sc = new Scanner(System.in);\n"
-        "        int n = sc.nextInt();\n"
-        "        if (n % 2 == 0) {\n"
-        "            System.out.println(\"Even\");\n"
-        "        } else {\n"
-        "            System.out.println(\"Odd\");\n"
-        "        }\n"
-        "    }\n"
-        "}\n"
-        "```"
-    ),
-    (
-        "Analysis: Both snippets read a single integer from standard input and print "
-        "\"Even\" if it is divisible by 2 and \"Odd\" otherwise. Their input type, output "
-        "type, and branching logic match exactly.\n"
-        "Final decision: \\boxed{clone}"
-    ),
-    (
-        "Question: Determine whether the following two code snippets are semantic code clones.\n\n"
-        "Code 1: Python\n"
-        "```python\n"
-        "n = int(input())\n"
-        "if n % 2 == 0:\n"
-        "    print(\"Even\")\n"
-        "else:\n"
-        "    print(\"Odd\")\n"
-        "```\n\n"
-        "Code 2: Java\n"
-        "```java\n"
-        "import java.util.Scanner;\n\n"
-        "public class Main {\n"
-        "    public static void main(String[] args) {\n"
-        "        Scanner sc = new Scanner(System.in);\n"
-        "        String s = sc.next();\n"
-        "        StringBuilder sb = new StringBuilder(s);\n"
-        "        sb.reverse();\n"
-        "        System.out.println(sb.toString());\n"
-        "    }\n"
-        "}\n"
-        "```"
-    ),
-    (
-        "Analysis: Code 1 reads a single integer from standard input and prints \"Even\" "
-        "or \"Odd\" based on its parity. Code 2 reads a string and prints it reversed. "
-        "The two snippets operate on different input types and implement unrelated "
-        "functionality.\n"
-        "Final decision: \\boxed{non-clone}"
-    ),
-]
-
-
 def extract_boxed_final_answer(text: str) -> str:
     """Pull the content of the last \\boxed{...} out of a model response.
 
@@ -170,6 +98,7 @@ local_models = {
     "mini":"Phi-3-mini-128k-instruct",
     "qwen23b":"Qwen2.5-Coder-3B-Instruct",
     "qwen-f2": "qwen-coder-pyjava-merged",
+    "qwen3-4b": "Qwen3-4B",
 
     # >5B parameter local models
     "phi3-small": "Phi-3-small-128k-instruct",
@@ -193,6 +122,7 @@ class OfflineRequest:
         enable_lora=False,
     ):
         self.model_path = str(upper_level_path / "models" / model)
+        self.max_model_len = max_model_len
         self.llm = LLM(
             model=self.model_path,
             tensor_parallel_size=tensor_parallel_size,
@@ -217,11 +147,10 @@ class OfflineRequest:
         self.results = []
 
     def _build_prompt_text(self, prompt):
-        messages = [{"role": "system", "content": system_prompt}]
-        for i in range(0, len(FEW_SHOT_EXAMPLES), 2):
-            messages.append({"role": "user", "content": FEW_SHOT_EXAMPLES[i]})
-            messages.append({"role": "assistant", "content": FEW_SHOT_EXAMPLES[i + 1]})
-        messages.append({"role": "user", "content": prompt})
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
         # enable_thinking=False keeps Qwen3 from emitting a <think> block
         # instead of a direct answer; harmless extra template kwarg for
         # every other model's chat template (mirrors rstar_prompt_wrap).
@@ -234,19 +163,46 @@ class OfflineRequest:
             return
         # vLLM batches all prompts across the tensor-parallel GPUs in one
         # call instead of the previous one-request-at-a-time HF .generate()
-        # loop.
-        prompt_texts = [self._build_prompt_text(prompt[1]) for prompt in prompts]
+        # loop. vLLM rejects the whole batch with a hard ValueError if even
+        # one prompt's token count exceeds max_model_len (seen on Qwen3
+        # runs, where a couple of eval_data rows tokenize far longer than
+        # under Qwen2.5's tokenizer -- one row even exceeds Qwen3's own
+        # absolute context limit). Filter those out up front, budgeting room
+        # for the response too, so one oversized row doesn't take down the
+        # other ~1000 legitimate ones; they're still written to the output
+        # file with an empty response so they show up as "no judgment"
+        # rather than silently vanishing from the totals.
+        prompt_budget = self.max_model_len - self.sampling_params.max_tokens
+        fittable, oversized = [], []
+        for prompt_id, prompt, row in prompts:
+            prompt_text = self._build_prompt_text(prompt)
+            token_len = len(self.tokenizer(prompt_text, add_special_tokens=False)["input_ids"])
+            if token_len > prompt_budget:
+                print(
+                    f"[{prompt_id}] SKIPPED: prompt is {token_len} tokens, "
+                    f"exceeds the {prompt_budget}-token budget "
+                    f"(max_model_len={self.max_model_len} - max_tokens={self.sampling_params.max_tokens})"
+                )
+                oversized.append((prompt_id, prompt, row))
+            else:
+                fittable.append((prompt_id, prompt, row, prompt_text))
+
+        prompt_texts = [f[3] for f in fittable]
         outputs = self.llm.generate(
             prompt_texts,
             self.sampling_params,
             lora_request=self.lora_request,
-        )
+        ) if prompt_texts else []
 
         with open(output_file, "a", encoding="utf-8") as fout:
-            for (prompt_id, prompt, row), output in zip(prompts, outputs):
+            for (prompt_id, prompt, row, _), output in zip(fittable, outputs):
                 response = output.outputs[0].text
                 print(f"[{prompt_id}] {response}\n")
                 entry = self._build_output_entry(prompt_id, prompt, response, row)
+                json.dump(entry, fout, ensure_ascii=False)
+                fout.write("\n")
+            for prompt_id, prompt, row in oversized:
+                entry = self._build_output_entry(prompt_id, prompt, "", row)
                 json.dump(entry, fout, ensure_ascii=False)
                 fout.write("\n")
 
@@ -385,10 +341,10 @@ class CodeCloneDetection:
     @staticmethod
     def _make_prompt(sample_id: int, code_section: str) -> Tuple[int, str]:
         # All the task instructions (criteria, format, the \boxed{} decision
-        # requirement) now live in the system prompt + few-shot examples, the
-        # same split rstar_prompt_wrap uses (pot_format_instructions as the
-        # system turn, pot_suffix as the final user turn). The user turn here
-        # is just the question itself, matching pot_suffix's "Question: {input}".
+        # requirement) now live in the system prompt, mirroring
+        # rstar_prompt_wrap's pot_format_instructions as the system turn. The
+        # user turn here is just the question itself, matching pot_suffix's
+        # "Question: {input}".
         return sample_id, f"Question: {code_section}"
 
 #     # ---------- main entry -------------------------------------------

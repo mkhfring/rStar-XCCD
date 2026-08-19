@@ -4,6 +4,7 @@
 from __future__ import annotations
 import os
 import json
+import glob
 import time
 import torch
 import traceback
@@ -14,6 +15,7 @@ from omegaconf import OmegaConf
 from rstar_deepthink.agents import BS, MCTS
 from rstar_deepthink.solver import Solver
 from rstar_deepthink.config import BaseConfig
+from evaluate_clone_results import evaluate as run_clone_evaluation, format_report as format_clone_eval_report
 
 torch.set_num_threads(12)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -48,8 +50,31 @@ def parse_args():
     args.add_argument('--model_dir', type=str, default="") 
     args.add_argument('--reward_model_dir', type=str, default="") 
     args.add_argument('--save_in_model', type=str, default="")
+    args.add_argument('--resume', action=argparse.BooleanOptionalAction, default=True,
+                       help="Resume from the latest matching output file: skip questions already "
+                            "present in it and append new results to it, instead of starting a "
+                            "fresh output file and reprocessing everything. On by default; pass "
+                            "--no-resume to always start over.")
     args = args.parse_args()
     return args
+
+
+def find_latest_output_file(pattern: str) -> str | None:
+    matches = sorted(glob.glob(pattern))
+    return matches[-1] if matches else None
+
+
+def load_processed_indices(saved_jsonl_file: str) -> set:
+    processed = set()
+    with open(saved_jsonl_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            record = json.loads(line)
+            if "question" in record and "index" in record:
+                processed.add(record["index"])
+    return processed
 
 
 if __name__ == '__main__':
@@ -85,12 +110,30 @@ if __name__ == '__main__':
     qaf_stem, qaf_ext = os.path.splitext(args.qaf)
     qaf_tag = f"{qaf_stem}_depth_{config.max_depth}{qaf_ext}"
     saved_jsonl_file = f"{qaf_tag}.{config.mode}.{llm_version}.{datetime.now().strftime('%Y%m%d%H%M%S')}.jsonl"
-    
+
     if args.save_in_model:
         saved_jsonl_file = args.save_in_model + '.jsonl'
         saved_jsonl_file_dir = os.path.dirname(saved_jsonl_file)
         os.makedirs(saved_jsonl_file_dir, exist_ok=True)
-        
+
+    total_data_len = len(data)
+    if args.resume:
+        # save_in_model already writes to a fixed, deterministic filename
+        # every run; everything else is timestamped per run, so the
+        # "latest output file" has to be found by globbing for prior runs
+        # against this same question file/mode/model combo.
+        if args.save_in_model:
+            existing_file = saved_jsonl_file if os.path.exists(saved_jsonl_file) else None
+        else:
+            existing_file = find_latest_output_file(f"{qaf_tag}.{config.mode}.{llm_version}.*.jsonl")
+
+        if existing_file:
+            processed_indices = load_processed_indices(existing_file)
+            data = [d for d in data if d["index"] not in processed_indices]
+            saved_jsonl_file = existing_file
+            print(f"Resuming from {existing_file}: {len(processed_indices)} already done, "
+                  f"{len(data)} remaining.")
+
     with open(saved_jsonl_file, "a+", encoding='utf-8') as writer:
         for cur_data in tqdm(batch(data, config.batch_size), desc="Main Processing"):
             agents = [agent(config=config, question=d["question"], ground_truth=str(d["answer"]))
@@ -114,7 +157,21 @@ if __name__ == '__main__':
                 writer.flush()
 
         elapsed_minutes = round((time.time() - start_time) / 60, 2)
-        writer.write(json.dumps({"index": len(data) + 1, "time": elapsed_minutes}, ensure_ascii=False) + '\n')
+        writer.write(json.dumps({"index": total_data_len + 1, "time": elapsed_minutes}, ensure_ascii=False) + '\n')
         writer.flush()
+
+    # rstar-xccd's clone-detection evaluator (precision/recall/F1/response
+    # rate over question/answer/rstar records), same as pure_inference runs
+    # at the end of their own inference call. Only meaningful for qaf files
+    # carrying rstar-xccd's question/answer schema -- evaluate_clone_results
+    # skips any line without a "question" field, so anything else just
+    # yields zero counts rather than erroring.
+    stats = run_clone_evaluation(saved_jsonl_file)
+    report = format_clone_eval_report(stats, saved_jsonl_file)
+    print(report)
+    report_path = f"{saved_jsonl_file}_result"
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(report)
+    print(f"Results written to: {report_path}")
 
     solver.close()

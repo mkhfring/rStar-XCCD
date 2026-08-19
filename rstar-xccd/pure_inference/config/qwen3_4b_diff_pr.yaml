@@ -1,0 +1,10 @@
+# Qwen3-4B, 2 GPU (tensor-parallel), real 1000-sample different-distribution
+# Python/Rust test set.
+datafile: "../eval_data/test_different_python_rust.jsonl"
+model: "qwen3-4b"
+
+num_gpus: 2
+gpu_memory_utilization: 0.90
+max_model_len: 16384
+max_tokens: 3000
+temperature: 0.0

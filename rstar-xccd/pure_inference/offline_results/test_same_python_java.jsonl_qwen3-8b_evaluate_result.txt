@@ -1,0 +1,19 @@
+Evaluation results for: /project/6104180/khajezad/rStar-XCCD/rstar-xccd/pure_inference/offline_results/test_same_python_java.jsonl_qwen3-8b_inference_result.jsonl
+
+Positive class: 'clone' | Negative class: 'non-clone'
+Total instances: 1000
+Instances with a clone/non-clone final judgment: 999
+Instances with no clone/non-clone final judgment: 1
+
+Response rate (instances with no clone/non-clone final judgment / total instances):
+  1 / 1000 = 0.0010
+
+Confusion matrix (computed only over judged instances):
+  True Positive  (predicted clone,     actual clone):     494
+  False Positive (predicted clone,     actual non-clone): 1
+  True Negative  (predicted non-clone, actual non-clone): 498
+  False Negative (predicted non-clone, actual clone):     6
+
+Precision: 0.9980
+Recall:    0.9880
+F1 score:  0.9930

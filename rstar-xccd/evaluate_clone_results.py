@@ -35,7 +35,13 @@ VALID_LABELS = {"clone", "non-clone"}
 
 
 def node_sort_key(tag):
-    return tuple(int(part) for part in tag.split("."))
+    """Sort key for a dot-numeric node tag (e.g. "0.1.2"), or None if the
+    tag isn't one -- some pipelines (e.g. beam search) stash extra
+    non-node keys like "solutions" in the same rstar dict."""
+    parts = tag.split(".")
+    if not all(part.isdigit() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
 
 
 def normalize_label(final_answer):
@@ -57,8 +63,9 @@ def predict_label(rstar_tree):
     """Return the majority-vote label ('clone'/'non-clone') for a question's
     tree, or None if no leaf node produced an answer that normalizes to
     clone/non-clone."""
+    numeric_nodes = [(tag, node) for tag, node in rstar_tree.items() if node_sort_key(tag) is not None]
     votes = []
-    for tag, node in sorted(rstar_tree.items(), key=lambda kv: node_sort_key(kv[0])):
+    for tag, node in sorted(numeric_nodes, key=lambda kv: node_sort_key(kv[0])):
         final_answer = (node.get("final_answer") or "").strip()
         if not final_answer:
             continue
