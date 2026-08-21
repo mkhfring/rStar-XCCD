@@ -5,8 +5,8 @@
 mode: "mcts"
 model_dir: ""
 
-few_shot_path: "./rstar_deepthink/few_shots/few_shot_imprvoed.json"
-prompt_path: "./rstar_deepthink/few_shots/mcts_prompt.json"
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_phi3.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt_phi3.json"
 
 swap_space: 8
 temperature: 0.7
@@ -25,12 +25,12 @@ max_depth: 4
 n_generate_sample: 2
 best_of: 2
 is_sampling: True
-iterations: 2
+iterations: 3
 max_tokens: 512
 
 need_value_func: False
 batch_size: 1
-num_few_shot: 2
+num_few_shot: 3
 max_model_len: 16384
 c_puct: 2
 terminal_sample: True
