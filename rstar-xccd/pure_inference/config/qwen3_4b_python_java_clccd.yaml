@@ -1,0 +1,11 @@
+# Qwen3-4B, 2 GPU (tensor-parallel), CLCCD-derived Python/Java
+# clone-detection test set (900 clone + 900 non-clone, direct Java-anchored
+# pairs pooled from CLCCD's CodeNet and XLCoST subsets).
+datafile: "../eval_data/test_python_java_CLCCD.jsonl"
+model: "qwen3-4b"
+
+num_gpus: 2
+gpu_memory_utilization: 0.90
+max_model_len: 16384
+max_tokens: 3000
+temperature: 0.0

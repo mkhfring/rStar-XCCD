@@ -1,0 +1,11 @@
+# Qwen2.5-Coder-7B-Instruct, 2 GPU (tensor-parallel), CLCCD-derived
+# Python/Rust clone-detection test set (300 clone + 900 non-clone, built via
+# the CLCCD Java-problem-id bridge; see CLCCD_DATASET_CONSTRUCTION.md).
+datafile: "../eval_data/test_python_rust_CLCCD.jsonl"
+model: "qwen25-7b"
+
+num_gpus: 2
+gpu_memory_utilization: 0.90
+max_model_len: 16384
+max_tokens: 3000
+temperature: 0.0
