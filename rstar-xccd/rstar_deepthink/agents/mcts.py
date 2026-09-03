@@ -119,7 +119,8 @@ class MCTS(BS):
             else:
                 new_node.state["text"] = step_result
                 
-            if "error" in observation.lower():
+            code_ran_ok = "error" not in observation.lower()
+            if not code_ran_ok:
                 new_node.consecutive_errors = node.consecutive_errors + 1
                 if new_node.consecutive_errors >= self.config.errors_threshold:
                     observation = self.obs_wrap(observation)
@@ -128,6 +129,16 @@ class MCTS(BS):
                     new_node.is_terminal = True
                     new_node.state["final_answer"] = TOO_MANY_CODE_ERRORS
                     self.eval_final_answer(new_node)
+
+            if not new_node.is_terminal:
+                # Score this branch on whether its generated code executed
+                # cleanly, independent of is_sampling/ground truth, so PUCT
+                # selection favors paths with valid, executable Python
+                # instead of treating all non-terminal code branches alike.
+                new_node.update_recursive(
+                    self.config.positive_reward if code_ran_ok else self.config.negative_reward,
+                    self.root,
+                )
         else:
             new_node.state["text"] = step_result
 
