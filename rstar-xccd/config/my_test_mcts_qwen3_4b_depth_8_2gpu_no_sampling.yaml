@@ -1,0 +1,43 @@
+# Qwen3-4B, 2 GPU (tensor-parallel) config.
+# Copy of my_test_mcts_qwen3_4b_depth_8_2gpu.yaml with is_sampling flipped to
+# False -- that shared config is still referenced by other Qwen3-4B scripts
+# with is_sampling True, so it's left untouched; this dedicated copy is for
+# the assert-consistency-score runs, which need the search to never see the
+# ground-truth label (matches the Qwen2.5-3B no_sampling config used
+# elsewhere in this repo).
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_imprvoed.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt.json"
+
+swap_space: 8
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 8
+n_generate_sample: 2
+best_of: 2
+is_sampling: False
+iterations: 2
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 2
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 2
