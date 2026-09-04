@@ -50,6 +50,11 @@ def parse_args():
     args.add_argument('--model_dir', type=str, default="") 
     args.add_argument('--reward_model_dir', type=str, default="") 
     args.add_argument('--save_in_model', type=str, default="")
+    args.add_argument('--branch', type=str, default="",
+                       help="Optional tag (e.g. the git branch these code changes came from) "
+                            "folded into the output filename and its resume glob, so runs from "
+                            "different branches/code versions never share or resume from each "
+                            "other's output file, and stay easy to tell apart when comparing.")
     args.add_argument('--resume', action=argparse.BooleanOptionalAction, default=True,
                        help="Resume from the latest matching output file: skip questions already "
                             "present in it and append new results to it, instead of starting a "
@@ -109,7 +114,9 @@ if __name__ == '__main__':
         
     qaf_stem, qaf_ext = os.path.splitext(args.qaf)
     qaf_tag = f"{qaf_stem}_depth_{config.max_depth}{qaf_ext}"
-    saved_jsonl_file = f"{qaf_tag}.{config.mode}.{llm_version}.{datetime.now().strftime('%Y%m%d%H%M%S')}.jsonl"
+    branch_tag = f".{args.branch}" if args.branch else ""
+    run_tag = f"{qaf_tag}.{config.mode}.{llm_version}{branch_tag}"
+    saved_jsonl_file = f"{run_tag}.{datetime.now().strftime('%Y%m%d%H%M%S')}.jsonl"
 
     if args.save_in_model:
         saved_jsonl_file = args.save_in_model + '.jsonl'
@@ -125,7 +132,7 @@ if __name__ == '__main__':
         if args.save_in_model:
             existing_file = saved_jsonl_file if os.path.exists(saved_jsonl_file) else None
         else:
-            existing_file = find_latest_output_file(f"{qaf_tag}.{config.mode}.{llm_version}.*.jsonl")
+            existing_file = find_latest_output_file(f"{run_tag}.*.jsonl")
 
         if existing_file:
             processed_indices = load_processed_indices(existing_file)
