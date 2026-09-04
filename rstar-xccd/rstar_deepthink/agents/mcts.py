@@ -2,6 +2,7 @@
 # Licensed under the MIT license.
 # Adapted from https://github.com/MARIO-Math-Reasoning/Super_MARIO
 from __future__ import annotations
+import re
 from termcolor import colored
 from typing import Dict, Any, Optional, Type, List, Tuple, Callable, Union
 from pydantic import field_validator
@@ -10,13 +11,20 @@ from rstar_deepthink.agents.utils import math_equiv as is_equiv
 from rstar_deepthink.nodes.base_node import BaseNode
 from rstar_deepthink.nodes import MCTSNode
 from rstar_deepthink.constants import (
-    TOO_MANY_CODE_ERRORS, 
-    TOO_MANY_STEPS, 
-    NO_VALID_CHILD, 
+    TOO_MANY_CODE_ERRORS,
+    TOO_MANY_STEPS,
+    NO_VALID_CHILD,
     CODE_END,
 )
-from .tree import BaseTree, code_execution
+from .tree import BaseTree, code_execution, collect_action_inputs, extract_program
 from .beam_search import BS
+from evaluate_clone_results import normalize_label
+
+# Matches an `assert` statement in generated code, used to decide whether a
+# python_interpreter step made an equivalence claim worth checking for
+# self-consistency against the branch's eventual conclusion (see
+# create_child() and MCTS._score_pending_assert_verdicts()).
+ASSERT_RE = re.compile(r"\bassert\b")
 
 
 class MCTS(BS):
@@ -120,7 +128,11 @@ class MCTS(BS):
                 new_node.state["text"] = step_result
                 
             code_ran_ok = "error" not in observation.lower()
-            if not code_ran_ok:
+            is_assertion_error = observation.startswith("AssertionError")
+            # A completed self-check (assertion held or failed) is not a
+            # code defect -- don't count it toward errors_threshold. Only a
+            # genuine crash (any other exception, or unparsable input) does.
+            if not code_ran_ok and not is_assertion_error:
                 new_node.consecutive_errors = node.consecutive_errors + 1
                 if new_node.consecutive_errors >= self.config.errors_threshold:
                     observation = self.obs_wrap(observation)
@@ -131,14 +143,35 @@ class MCTS(BS):
                     self.eval_final_answer(new_node)
 
             if not new_node.is_terminal:
-                # Score this branch on whether its generated code executed
-                # cleanly, independent of is_sampling/ground truth, so PUCT
-                # selection favors paths with valid, executable Python
-                # instead of treating all non-terminal code branches alike.
-                new_node.update_recursive(
-                    self.config.positive_reward if code_ran_ok else self.config.negative_reward,
-                    self.root,
-                )
+                if is_assertion_error:
+                    # The branch ran its own equivalence check and found the
+                    # snippets differ. Don't reward/penalize this outright --
+                    # whether that was the "right" outcome depends on the
+                    # branch's eventual conclusion, which doesn't exist yet.
+                    # Scored retroactively in eval_final_answer() instead, so
+                    # the signal is about self-consistency (does the
+                    # conclusion follow from this branch's own evidence),
+                    # never about ground truth.
+                    new_node.state["assert_verdict"] = "non-clone"
+                elif not code_ran_ok:
+                    # Genuine crash, independent of is_sampling/ground
+                    # truth: PUCT should favor paths with valid, executable
+                    # Python over ones that error out.
+                    new_node.update_recursive(self.config.negative_reward, self.root)
+                else:
+                    history_action_inputs = collect_action_inputs(node, parser_result["action"])
+                    executed_code = extract_program(''.join(history_action_inputs) + parser_result["action_input"])
+                    if ASSERT_RE.search(executed_code):
+                        # Ran cleanly *and* the code made an equivalence
+                        # claim (an assert that held). Same deferred
+                        # treatment as the AssertionError case above, with
+                        # the opposite implied verdict.
+                        new_node.state["assert_verdict"] = "clone"
+                    else:
+                        # Plain clean execution with nothing to verify
+                        # against the eventual conclusion -- score
+                        # immediately, as before.
+                        new_node.update_recursive(self.config.positive_reward, self.root)
         else:
             new_node.state["text"] = step_result
 
@@ -153,8 +186,10 @@ class MCTS(BS):
         if node.state["final_answer"] in [NO_VALID_CHILD, TOO_MANY_STEPS, TOO_MANY_CODE_ERRORS]:
             # if the final answer is not valid, update the node with negative reward
             node.update(self.config.negative_reward)
-            return 
-        
+            return
+
+        self._score_pending_assert_verdicts(node)
+
         if self.config.is_sampling:
             final_answer = node.state["final_answer"]
             correct = is_equiv(self.ground_truth, final_answer)
@@ -163,6 +198,39 @@ class MCTS(BS):
             # just append the node to candidate_nodes, will update the value in select_next_step()
             self.candidate_nodes.append(node)
 
+    def _score_pending_assert_verdicts(self, node: Type[MCTSNode]) -> None:
+        """Retroactively score ancestor code-execution steps that ran an
+        equivalence assertion (see create_child()) against this leaf's
+        actual conclusion.
+
+        create_child() defers scoring a python_interpreter step the moment
+        it hits a completed assert (pass or AssertionError), because the
+        branch's eventual conclusion doesn't exist yet -- rewarding/
+        penalizing it immediately would mean guessing, or worse, leaking
+        which answer is "right". Once a leaf resolves to a real answer, we
+        walk back up and check whether each ancestor's assertion outcome
+        actually agrees with what the branch concluded: reward
+        self-consistency, penalize contradicting your own evidence (e.g.
+        the assertion found the snippets differ, but the branch still
+        concludes "clone" some other way). This never touches
+        self.ground_truth -- it only compares the branch's evidence to its
+        own conclusion, so it's meaningful regardless of is_sampling.
+
+        A single ancestor can be visited by multiple descendant leaves
+        across different rollouts; each one contributes its own
+        consistency judgment via update_recursive's running average, same
+        as every other reward in this tree.
+        """
+        leaf_label = normalize_label(node.state.get("final_answer", ""))
+        if leaf_label is None:
+            return
+        ancestor = node.parent
+        while ancestor is not None:
+            verdict = ancestor.state.get("assert_verdict")
+            if verdict is not None:
+                reward = self.config.positive_reward if verdict == leaf_label else self.config.negative_reward
+                ancestor.update_recursive(reward, self.root)
+            ancestor = ancestor.parent
 
     def record_intermediate_metric(self, answer, value_estimate):
         self.intermediate_metric["question"] = self.question
