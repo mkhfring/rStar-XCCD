@@ -182,6 +182,21 @@ gains. Reporting the oracle-over-existing-leaves ceiling alongside any
 search-based result would make this legible, and is a cheap, honest
 diagnostic other work in this area generally omits.
 
+## Figures
+
+Three figures in `rstar-xccd/figures/` (PDF for the paper, PNG for preview),
+built by `figures/make_discussion_figures.py`:
+
+| Figure | Carries | Why a figure beats the table |
+|---|---|---|
+| `fig1_reward_allocation` | share of code-execution steps by observation class, per run | the content-free class is 52%–80% of every run; a stacked bar makes that a single glance rather than four columns to compare |
+| `fig2_transition_decomposition` | agreement split into its four transitions, accuracy + n | the whole argument is that one number averages a 0.00 bucket with a base-rate bucket — side-by-side bars show the spread that the average hides |
+| `fig3_ceiling` | pure inference vs MCTS vs oracle-over-leaves, per model × dataset | three points on one axis show simultaneously that the MCTS→oracle gap is tiny and that pure inference beats MCTS on Qwen2.5-3B/java |
+
+Palette is the validated categorical default (light mode); every mark is
+directly labelled, which is also the required relief for the slots under
+3:1 contrast on a light surface.
+
 ## Reproduction
 
 ```
