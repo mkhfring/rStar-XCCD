@@ -1,0 +1,20 @@
+Evaluation results for: eval_data/test_python_java_CLCCD_depth_16.jsonl.mcts.Qwen3-4B.assert-consistency-score.20260904205237.jsonl
+
+Positive class: 'clone' | Negative class: 'non-clone'
+Leaf aggregation: clone-on-disagreement
+Total instances: 1800
+Instances with a clone/non-clone final judgment: 1798
+Instances with no clone/non-clone final judgment: 2
+
+Response rate (instances with no clone/non-clone final judgment / total instances):
+  2 / 1800 = 0.0011
+
+Confusion matrix (computed only over judged instances):
+  True Positive  (predicted clone,     actual clone):     761
+  False Positive (predicted clone,     actual non-clone): 0
+  True Negative  (predicted non-clone, actual non-clone): 900
+  False Negative (predicted non-clone, actual clone):     137
+
+Precision: 1.0000
+Recall:    0.8474
+F1 score:  0.9174
