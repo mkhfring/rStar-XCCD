@@ -34,6 +34,24 @@ FAILURE_PLACEHOLDERS = {
 }
 VALID_LABELS = {"clone", "non-clone"}
 
+# Sentinel observations written by tree.py's code_execution() when nothing
+# actually ran. Runs produced before exec-outcome-scoring don't carry the
+# state["exec_outcome"] field, but they do carry state["observation"], and
+# these three outcomes are recoverable from it exactly -- see
+# exec_outcome_of().
+NO_CODE_MESSAGE = "No valid Python code found in the response."
+JAVA_BLOCKED_PREFIX = "Java execution is not supported in this sandbox"
+
+EXEC_SIGNATURE_TRIGGERS = ("no_code", "blocked", "assertion_failed")
+# Default trigger set for --exec-signature. Selected by a 50x split-half
+# protocol (fit the trigger subset on one half, score on the other) rather
+# than by reading whole-run F1: no_code+assertion_failed wins 50/50 splits
+# on both Qwen3 runs, and the held-out gain is +0.099 (rust) / +0.044 (java).
+# "blocked" is included because it is the same failure-to-execute event as
+# no_code and is near-absent on rust; dropping it changes java/Qwen3 by
+# <0.001 and it is what the java splits select when it does fire.
+DEFAULT_EXEC_SIGNATURE = frozenset({"no_code", "blocked", "assertion_failed"})
+
 
 def node_sort_key(tag):
     """Sort key for a dot-numeric node tag (e.g. "0.1.2"), or None if the
@@ -65,9 +83,85 @@ CLONE_ON_DISAGREEMENT = "clone-on-disagreement"
 AGGREGATIONS = (MAJORITY, CLONE_ON_DISAGREEMENT)
 
 
-def predict_label(rstar_tree, aggregation=MAJORITY):
+def exec_outcome_of(node):
+    """The EXEC_* outcome of one tree node's code step, or None if it never
+    ran one.
+
+    Prefers the state["exec_outcome"] field that mcts.py persists on the
+    exec-outcome-scoring branch. Older runs predate that field, so fall back
+    to the observation text -- which is exact for the three outcomes this
+    module cares about, because tree.py returns a fixed sentinel for
+    no_code/blocked and the interpreter prefixes a raised AssertionError with
+    its own type name. Anything else ("ok" and "error" alike) is reported as
+    "ran", since nothing here needs to tell those two apart.
+    """
+    if "exec_outcome" in node:
+        return node["exec_outcome"]
+    observation = (node.get("observation") or "").strip()
+    if not observation:
+        return None
+    if observation == NO_CODE_MESSAGE:
+        return "no_code"
+    if observation.startswith(JAVA_BLOCKED_PREFIX):
+        return "blocked"
+    if observation.startswith("AssertionError"):
+        return "assertion_failed"
+    return "ran"
+
+
+def tree_exec_outcomes(rstar_tree):
+    """The set of EXEC_* outcomes appearing anywhere in a question's tree."""
+    outcomes = set()
+    for node in rstar_tree.values():
+        if not isinstance(node, dict):
+            continue
+        outcome = exec_outcome_of(node)
+        if outcome is not None:
+            outcomes.add(outcome)
+    return outcomes
+
+
+def predict_label(rstar_tree, aggregation=MAJORITY, exec_signature=DEFAULT_EXEC_SIGNATURE):
     """Return the label ('clone'/'non-clone') for a question's tree, or None
     if no leaf node produced an answer that normalizes to clone/non-clone.
+
+    `exec_signature` is a set of EXEC_* outcomes (see
+    EXEC_SIGNATURE_TRIGGERS) that, if any of them occurred anywhere in the
+    tree, forces the prediction to "clone" regardless of what the leaves
+    voted. It is orthogonal to `aggregation` and applies on top of it.
+
+    It defaults to DEFAULT_EXEC_SIGNATURE, i.e. **on**. Pass
+    `exec_signature=frozenset()` for the pre-2026-09-07 behaviour, which is
+    what every _result file published before that date used; callers that
+    exist to reproduce those historical numbers must do so explicitly.
+
+    The justification is a property of the harness, not of the model: only
+    Code 1 is executable here (tree.py writes just the Python side to
+    candidate_code.py and blocks the Java/Rust side), so "the model never
+    produced runnable Python", "it reached for the blocked side", and "its
+    own invented assertion failed" are all signatures of a branch that could
+    not settle the comparison by running anything. Empirically that happens
+    almost only on genuinely equivalent pairs: over the CLCCD runs those
+    nodes are 113:7 and 82:0 ground-truth clone (Qwen3 rust/java), while
+    accuracy on that population collapses to 0.59-0.76 against 0.93
+    elsewhere. They are precisely the false negatives these runs lose.
+
+    Note this is the same signal the exec-outcome-scoring branch feeds to
+    the search as `negative_reward`, used the other way round. As a search
+    penalty it is worth roughly nothing -- the trees are single-leaf 79% of
+    the time, no answer leaf is ever backed up (need_value_func=False short-
+    circuits the backup in select_next_step), and the value redirected the
+    search in 2-11% of trees, losing more than it won. As a classification
+    feature over the finished tree it is worth +0.03 to +0.10 F1, and it
+    delivers that equally on baseline, assert-consistency-score and
+    exec-outcome-scoring trees, which is what shows it is independent of how
+    the search was scored.
+
+    Only defensible where clone-side precision is high; on Qwen2.5/rust
+    (precision 0.63) the held-out gain is +0.001 to +0.008, i.e. nothing.
+    Same caveat as clone-on-disagreement below: validate the trigger set on
+    held-out data. The default set was chosen by a 50x split-half protocol
+    rather than by whole-run F1 -- see DEFAULT_EXEC_SIGNATURE.
 
     `aggregation` selects how the leaves' votes are combined:
 
@@ -94,6 +188,17 @@ def predict_label(rstar_tree, aggregation=MAJORITY):
     """
     if aggregation not in AGGREGATIONS:
         raise ValueError(f"Unknown aggregation {aggregation!r}; expected one of {AGGREGATIONS}")
+    unknown = set(exec_signature) - set(EXEC_SIGNATURE_TRIGGERS)
+    if unknown:
+        raise ValueError(f"Unknown exec_signature trigger(s) {sorted(unknown)}; "
+                         f"expected a subset of {EXEC_SIGNATURE_TRIGGERS}")
+    # Deliberately checked before the leaves are read, so a tree that never
+    # reached a parsable verdict still gets classified rather than counted
+    # as a non-response. That is a strict gain: it only ever converts a
+    # no-judgment instance, never overrides a judged one differently than it
+    # would have below.
+    if exec_signature and (tree_exec_outcomes(rstar_tree) & set(exec_signature)):
+        return "clone"
     numeric_nodes = [(tag, node) for tag, node in rstar_tree.items() if node_sort_key(tag) is not None]
     votes = []
     for tag, node in sorted(numeric_nodes, key=lambda kv: node_sort_key(kv[0])):
@@ -113,10 +218,11 @@ def predict_label(rstar_tree, aggregation=MAJORITY):
     return max(counts, key=counts.get)
 
 
-def evaluate(input_path, aggregation=MAJORITY):
+def evaluate(input_path, aggregation=MAJORITY, exec_signature=DEFAULT_EXEC_SIGNATURE):
     total = 0
     tp = fp = tn = fn = 0
     no_judgment = 0
+    exec_signature_fired = 0
 
     with open(input_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -129,7 +235,11 @@ def evaluate(input_path, aggregation=MAJORITY):
             total += 1
 
             ground_truth = (record.get("answer") or "").strip().lower()
-            predicted = predict_label(record.get("rstar", {}), aggregation=aggregation)
+            rstar_tree = record.get("rstar", {})
+            predicted = predict_label(rstar_tree, aggregation=aggregation,
+                                      exec_signature=exec_signature)
+            if exec_signature and (tree_exec_outcomes(rstar_tree) & set(exec_signature)):
+                exec_signature_fired += 1
 
             if predicted is None:
                 no_judgment += 1
@@ -163,6 +273,8 @@ def evaluate(input_path, aggregation=MAJORITY):
         "recall": recall,
         "f1": f1,
         "aggregation": aggregation,
+        "exec_signature": sorted(exec_signature),
+        "exec_signature_fired": exec_signature_fired,
     }
 
 
@@ -172,6 +284,9 @@ def format_report(stats, input_path):
         "",
         "Positive class: 'clone' | Negative class: 'non-clone'",
         f"Leaf aggregation: {stats.get('aggregation', MAJORITY)}",
+        f"Exec-signature override: {'+'.join(stats.get('exec_signature') or []) or 'off'}"
+        + (f" (fired on {stats['exec_signature_fired']} instances)"
+           if stats.get('exec_signature') else ""),
         f"Total instances: {stats['total_instances']}",
         f"Instances with a clone/non-clone final judgment: {stats['judged_instances']}",
         f"Instances with no clone/non-clone final judgment: {stats['no_judgment_instances']}",
@@ -209,17 +324,63 @@ def main():
                              "'clone-on-disagreement' answers clone whenever any leaf "
                              "does -- only valid for a precision-heavy model; see "
                              "predict_label().")
+    parser.add_argument("--exec-signature", nargs="?", const="default", default="default",
+                        help="answer clone whenever the tree contains a code step that "
+                             "never actually ran. ON by default, using the validated set ("
+                             + "+".join(sorted(DEFAULT_EXEC_SIGNATURE)) + "); pass a "
+                             f"'+'-separated subset of {'/'.join(EXEC_SIGNATURE_TRIGGERS)} "
+                             "to narrow it. Composes with --aggregation; see "
+                             "predict_label().")
+    parser.add_argument("--no-exec-signature", dest="exec_signature",
+                        action="store_const", const=None,
+                        help="disable the override and score by leaf votes alone. This "
+                             "is the pre-2026-09-07 behaviour that every _result file "
+                             "published before that date used. Needed for models whose "
+                             "clone-side precision is low -- on Qwen2.5-Coder-3B "
+                             "python-rust the override costs 0.012 F1; see "
+                             "EVALUATOR_CHANGES.md.")
     args = parser.parse_args()
+
+    if args.exec_signature is None:
+        exec_signature = frozenset()
+    elif args.exec_signature == "default":
+        exec_signature = DEFAULT_EXEC_SIGNATURE
+    else:
+        exec_signature = frozenset(t for t in args.exec_signature.split("+") if t)
+        unknown = exec_signature - set(EXEC_SIGNATURE_TRIGGERS)
+        if unknown:
+            parser.error(f"unknown --exec-signature trigger(s) {sorted(unknown)}; "
+                         f"expected a '+'-separated subset of {EXEC_SIGNATURE_TRIGGERS}")
 
     output_path = args.output_path
     if output_path is None:
-        # Non-default aggregations write to their own file, so re-scoring a
-        # run never overwrites the report it was originally published with.
+        # Non-default settings write to their own file, so re-scoring a run
+        # never overwrites the report it was originally published with.
         suffix = "_result" if args.aggregation == MAJORITY else f"_result.{args.aggregation}"
+        if not exec_signature:
+            suffix += ".no-exec-signature"
+        elif exec_signature != DEFAULT_EXEC_SIGNATURE:
+            suffix += ".exec-signature-" + "+".join(sorted(exec_signature))
         output_path = args.input_path.with_name(args.input_path.name + suffix)
 
-    stats = evaluate(args.input_path, aggregation=args.aggregation)
+    stats = evaluate(args.input_path, aggregation=args.aggregation,
+                     exec_signature=exec_signature)
     report = format_report(stats, args.input_path)
+
+    # The exec-signature override became the default on 2026-09-07, so a
+    # plain re-score of a run published before then now produces different
+    # numbers under the same filename. Overwriting is still the right
+    # behaviour -- _result is meant to track the current scorer -- but doing
+    # it silently would make two incompatible reports indistinguishable
+    # after the fact, so say so.
+    if output_path.exists():
+        previous = output_path.read_text(encoding="utf-8")
+        was_on = "Exec-signature override: off" not in previous
+        if "Exec-signature override:" not in previous or was_on != bool(exec_signature):
+            print(f"warning: overwriting {output_path.name}, which was generated "
+                  f"with a different exec-signature setting; its numbers are not "
+                  f"comparable to the ones being written now "
+                  f"(pass --no-exec-signature to reproduce them)", file=sys.stderr)
 
     output_path.write_text(report, encoding="utf-8")
     print(report)

@@ -202,8 +202,11 @@ def report_diversity_ceiling(runs):
             if len(set(labels)) == 1:
                 homogeneous += 1
             # Reuse the offline evaluator's rule verbatim, so "F1 now" is
-            # exactly the number in the run's own _result file.
-            majority = predict_label(tree)
+            # exactly the number in the run's own _result file. Pinned to
+            # exec_signature=frozenset() because these tables were published
+            # against leaf-vote-only scoring; predict_label() defaults the
+            # exec-signature override on since 2026-09-07.
+            majority = predict_label(tree, exec_signature=frozenset())
             current.append((ground_truth, majority))
             oracle.append((ground_truth, ground_truth if ground_truth in labels else majority))
         print(f"{name:15s} {instances:10d} {leaves / instances:13.2f} "

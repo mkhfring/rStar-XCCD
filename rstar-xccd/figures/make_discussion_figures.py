@@ -287,7 +287,10 @@ def fig3():
             labels = [lab for _t, _n, lab in answer_leaves(tree)]
             if not labels:
                 continue
-            majority = predict_label(tree)
+            # Pinned to leaf-vote-only scoring: these figures were published
+            # against it, and predict_label() defaults the exec-signature
+            # override on since 2026-09-07.
+            majority = predict_label(tree, exec_signature=frozenset())
             cur.append((truth, majority))
             oracle.append((truth, truth if truth in labels else majority))
         pure = []
@@ -300,7 +303,8 @@ def fig3():
                 if "question" not in rec:
                     continue
                 pure.append(((rec.get("answer") or "").strip().lower(),
-                             predict_label(rec.get("rstar", {}))))
+                             predict_label(rec.get("rstar", {}),
+                                           exec_signature=frozenset())))
         rows.append((name, f1(pure), f1(cur), f1(oracle)))
 
     fig, ax = plt.subplots(figsize=(8.6, 3.4))
