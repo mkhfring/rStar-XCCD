@@ -117,3 +117,94 @@ coherence between verification and conclusion.
 
 No MCTS run has been executed against this branch yet — the above is
 static verification only.
+
+---
+
+# Rework on the `exec-outcome-scoring` branch
+
+## Why this exists
+
+A node-level audit of the four completed `assert-consistency-score` CLCCD
+runs (Qwen3-4B and Qwen2.5-Coder-3B, python↔java and python↔rust; ~55k
+nodes) found the scoring above was rewarding the wrong things, and that its
+central inference is unsound in this sandbox.
+
+**The assertions cannot test what the score assumes they test.** `tree.py`
+writes only Code 1 (the Python side) to `candidate_code.py`, and
+`is_java_execution_attempt()` blocks running Code 2. Code 2 is therefore
+never executable, so the model's assertions overwhelmingly compare Code 1's
+output against an expected literal *the model invented* — 73% of tagged
+nodes on Qwen3/java, 91% on Qwen3/rust. An `AssertionError` means "the model
+guessed the output wrong", not "the snippets differ".
+
+Measured consequences:
+
+| finding | evidence |
+|---|---|
+| the `non-clone` verdict was never right | 0/38 correct (Qwen3/java), 0/27 (Qwen3/rust), 0/45 (Qwen2.5/java) |
+| verdicts assigned when no code ran at all | 65/169 (38%, Qwen3/java), 72/130 (55%, Qwen3/rust) |
+| largest reward class was content-free | the model printing its own verdict ("not code clones") was 52%–79% of all code executions, each paid `positive_reward` |
+| failure to act was paid, not penalized | "No valid Python code found" earned `positive_reward` 170–183×/run, on instances 170:0 and 177:6 ground-truth *clone* |
+| the crash test misfired both ways | `"error" not in observation.lower()`: Qwen2.5/java had 415 observations containing "error" vs 267 real exceptions |
+
+Every misleading reward concentrated on ground-truth-clone instances, which
+is the population these runs lose (recall 0.64–0.82 against precision ~1.0).
+
+## The five changes
+
+1. **Dropped the `AssertionError → "non-clone"` inference.** A failed
+   assertion is now scored neutrally: not a defect, but no evidence about
+   equivalence either. It still does not count toward `errors_threshold`.
+2. **Verdict tagging requires that code actually ran** (`EXEC_OK`). This
+   falls out of the new outcome classification rather than being a separate
+   guard.
+3. **`EXEC_NO_CODE` and `EXEC_BLOCKED` now earn `negative_reward`**
+   instead of `positive_reward`. Neither increments `consecutive_errors`:
+   penalising them changes the rewards without changing the search's shape.
+4. **Verdict echoes earn nothing.** `is_verdict_echo()` in `mcts.py` detects
+   a short observation that normalizes to a clone/non-clone label — the
+   model printing its conclusion rather than computing anything.
+5. **Real error flag replaces the substring test.**
+   `PythonInterpreter.run()` returns `(nothing_was_raised, text)`, and
+   `code_execution()` returns `(observation, outcome)` where outcome is one
+   of `EXEC_OK` / `EXEC_ERROR` / `EXEC_ASSERTION_FAILED` / `EXEC_NO_CODE` /
+   `EXEC_BLOCKED`. The outcome is persisted to `state["exec_outcome"]` so
+   later rollout audits can read what the scorer saw instead of re-deriving
+   it from text.
+
+`_score_pending_assert_verdicts()` is unchanged; with change 1 the only tag
+it can now see is `"clone"`.
+
+## Expected payoff, honestly
+
+Small. These runs produce 1.2–1.5 real answers per tree and 95%–99% of
+trees are label-homogeneous, so even an oracle picking the best existing
+leaf gains only +0.017 to +0.032 F1. The case for these changes is that the
+previous scoring was invalid and actively penalised correct branches on
+clone instances — not that large gains are waiting.
+
+## Sampling
+
+`is_sampling` already defaults to `False` in `rstar_deepthink/config.py`,
+and every config used by the runs below sets it explicitly. The search
+therefore never compares against `self.ground_truth`.
+
+## Files touched
+
+- `rstar_deepthink/tools/python_tool.py` — `(ok, text)` return.
+- `rstar_deepthink/agents/tree.py` — `EXEC_*` outcomes, `code_execution()`.
+- `rstar_deepthink/agents/mcts.py` — changes 1–4.
+- `rstar_deepthink/agents/beam_search.py` — uses the real error flag too.
+
+## Verification performed
+
+- `py_compile` on all four files; full import under both venvs
+  (`venv-qwen3` for Qwen3, `venv` for Qwen2.5).
+- End-to-end `code_execution()` classification for all five outcomes,
+  including the two regressions change 5 fixes: a program printing "error"
+  as data now classifies `ok`, and a failing assert classifies
+  `assertion_failed` rather than a crash.
+- `is_verdict_echo()` accepts "not code clones"/"clone" and rejects "2",
+  "All Python test cases passed.", and long output.
+
+No MCTS run had been executed against this branch at the time of writing.
