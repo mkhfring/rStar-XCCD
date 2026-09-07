@@ -16,17 +16,7 @@ from rstar_deepthink.constants import (
     NO_VALID_CHILD,
     CODE_END,
 )
-from .tree import (
-    BaseTree,
-    code_execution,
-    collect_action_inputs,
-    extract_program,
-    EXEC_OK,
-    EXEC_ERROR,
-    EXEC_ASSERTION_FAILED,
-    EXEC_NO_CODE,
-    EXEC_BLOCKED,
-)
+from .tree import BaseTree, code_execution, collect_action_inputs, extract_program
 from .beam_search import BS
 from evaluate_clone_results import normalize_label
 
@@ -35,28 +25,6 @@ from evaluate_clone_results import normalize_label
 # self-consistency against the branch's eventual conclusion (see
 # create_child() and MCTS._score_pending_assert_verdicts()).
 ASSERT_RE = re.compile(r"\bassert\b")
-
-# An observation this short that reads as a clone/non-clone label is the
-# model's own conclusion echoed back by a print(), not a computed result.
-# Real computed observations in these runs are numbers, program stdout, or
-# messages like "All Python test cases passed."
-VERDICT_ECHO_MAX_LEN = 64
-
-
-def is_verdict_echo(observation: str) -> bool:
-    """True if the step's only "output" was printing its own clone verdict.
-
-    Rollout analysis of the assert-consistency-score runs found this to be
-    the single largest observation class -- 52%-79% of all code executions
-    across the four CLCCD runs -- where the model writes a program whose
-    entire body prints "not code clones" and nothing is actually verified.
-    It ran cleanly, so the old scorer paid it `positive_reward`, making the
-    loudest signal in the whole search a content-free one.
-    """
-    text = observation.strip()
-    if not text or len(text) > VERDICT_ECHO_MAX_LEN:
-        return False
-    return normalize_label(text) is not None
 
 
 class MCTS(BS):
@@ -149,27 +117,22 @@ class MCTS(BS):
             new_node.state["final_answer"] = parser_result["final_answer"]
             self.eval_final_answer(new_node)
         elif parser_result["action"]:
-            observation, exec_outcome = code_execution(node, parser_result)
+            observation = code_execution(node, parser_result)
             new_node.state["action"] = parser_result["action"]
             new_node.state["action_input"] = parser_result["action_input"]
             new_node.state["observation"] = observation
-            # Persisted so offline rollout analysis can audit what the
-            # scorer saw, instead of re-deriving it from the text.
-            new_node.state["exec_outcome"] = exec_outcome
-            raw_observation = observation
             if CODE_END in parser_result["action_input"]:
                 observation = self.obs_wrap(observation)
                 new_node.state["text"] = f"{step_result}{self.config.step_delim}{observation}"
             else:
                 new_node.state["text"] = step_result
-
-            # A completed self-check (assertion held or failed) is not a code
-            # defect -- don't count it toward errors_threshold. Neither is
-            # failing to emit runnable code or reaching for the non-Python
-            # side: those are scored badly below, but terminating the branch
-            # early on them would change the search's shape, not just its
-            # rewards. Only a genuine crash counts.
-            if exec_outcome == EXEC_ERROR:
+                
+            code_ran_ok = "error" not in observation.lower()
+            is_assertion_error = observation.startswith("AssertionError")
+            # A completed self-check (assertion held or failed) is not a
+            # code defect -- don't count it toward errors_threshold. Only a
+            # genuine crash (any other exception, or unparsable input) does.
+            if not code_ran_ok and not is_assertion_error:
                 new_node.consecutive_errors = node.consecutive_errors + 1
                 if new_node.consecutive_errors >= self.config.errors_threshold:
                     observation = self.obs_wrap(observation)
@@ -180,67 +143,30 @@ class MCTS(BS):
                     self.eval_final_answer(new_node)
 
             if not new_node.is_terminal:
-                if exec_outcome in (EXEC_NO_CODE, EXEC_BLOCKED):
-                    # Failure to act. Nothing executed: the model either
-                    # emitted no runnable Python, or tried to run Code 2 in a
-                    # sandbox that cannot run it. Both used to earn
-                    # `positive_reward`, because their sentinel messages
-                    # contain no "error" substring -- and in the Qwen3 CLCCD
-                    # runs this fired 170-183 times per run, on instances
-                    # that were 170:0 and 177:6 ground-truth clone. The
-                    # search was being paid to give up on exactly the
-                    # population it was losing.
-                    new_node.update_recursive(self.config.negative_reward, self.root)
-                elif exec_outcome == EXEC_ERROR:
+                if is_assertion_error:
+                    # The branch ran its own equivalence check and found the
+                    # snippets differ. Don't reward/penalize this outright --
+                    # whether that was the "right" outcome depends on the
+                    # branch's eventual conclusion, which doesn't exist yet.
+                    # Scored retroactively in eval_final_answer() instead, so
+                    # the signal is about self-consistency (does the
+                    # conclusion follow from this branch's own evidence),
+                    # never about ground truth.
+                    new_node.state["assert_verdict"] = "non-clone"
+                elif not code_ran_ok:
                     # Genuine crash, independent of is_sampling/ground
                     # truth: PUCT should favor paths with valid, executable
                     # Python over ones that error out.
                     new_node.update_recursive(self.config.negative_reward, self.root)
-                elif exec_outcome == EXEC_ASSERTION_FAILED:
-                    # Deliberately unscored, and deliberately *not* tagged.
-                    #
-                    # This used to set assert_verdict="non-clone", on the
-                    # theory that a failed assertion means the two snippets
-                    # disagree. It doesn't. Only Code 1 is executable here
-                    # (tree.py writes just the Python side to
-                    # candidate_code.py, and Java/Rust execution is blocked),
-                    # so the model's assertions overwhelmingly compare Code 1
-                    # against an expected literal it invented -- 73% of
-                    # tagged nodes on Qwen3/java, 91% on Qwen3/rust. A
-                    # failure therefore means "the model guessed the output
-                    # wrong", not "the snippets differ".
-                    #
-                    # Measured on the assert-consistency-score rollouts, the
-                    # tag was wrong every single time it fired: 0/38 correct
-                    # on Qwen3/java, 0/27 on Qwen3/rust, 0/45 on
-                    # Qwen2.5/java. Worse, _score_pending_assert_verdicts()
-                    # then charged negative_reward to branches that ignored
-                    # it and reached the right answer.
-                    #
-                    # It is still not a defect, so it earns nothing rather
-                    # than a penalty.
-                    pass
-                else:  # EXEC_OK
+                else:
                     history_action_inputs = collect_action_inputs(node, parser_result["action"])
                     executed_code = extract_program(''.join(history_action_inputs) + parser_result["action_input"])
                     if ASSERT_RE.search(executed_code):
-                        # Code that actually ran, and that made an
-                        # equivalence claim which held. Scored retroactively
-                        # in eval_final_answer() against the branch's
-                        # eventual conclusion, so the signal is about
-                        # self-consistency, never about ground truth.
-                        #
-                        # Reaching this branch now requires EXEC_OK, which
-                        # is the point: 38% (Qwen3/java) and 55%
-                        # (Qwen3/rust) of the old tags were attached to
-                        # nodes where no code ran at all, the assert having
-                        # been matched in accumulated history text.
+                        # Ran cleanly *and* the code made an equivalence
+                        # claim (an assert that held). Same deferred
+                        # treatment as the AssertionError case above, with
+                        # the opposite implied verdict.
                         new_node.state["assert_verdict"] = "clone"
-                    elif is_verdict_echo(raw_observation):
-                        # The program's whole output was its own verdict --
-                        # no computation to reward. Neutral rather than the
-                        # `positive_reward` this used to collect.
-                        pass
                     else:
                         # Plain clean execution with nothing to verify
                         # against the eventual conclusion -- score

@@ -34,7 +34,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from evaluate_clone_results import normalize_label, node_sort_key, predict_label
+from evaluate_clone_results import MAJORITY, normalize_label, node_sort_key, predict_label
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -290,7 +290,7 @@ def fig3():
             # Pinned to leaf-vote-only scoring: these figures were published
             # against it, and predict_label() defaults the exec-signature
             # override on since 2026-09-07.
-            majority = predict_label(tree, exec_signature=frozenset())
+            majority = predict_label(tree, aggregation=MAJORITY, exec_signature=frozenset())
             cur.append((truth, majority))
             oracle.append((truth, truth if truth in labels else majority))
         pure = []
@@ -304,6 +304,7 @@ def fig3():
                     continue
                 pure.append(((rec.get("answer") or "").strip().lower(),
                              predict_label(rec.get("rstar", {}),
+                                           aggregation=MAJORITY,
                                            exec_signature=frozenset())))
         rows.append((name, f1(pure), f1(cur), f1(oracle)))
 

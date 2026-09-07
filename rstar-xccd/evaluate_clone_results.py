@@ -121,7 +121,8 @@ def tree_exec_outcomes(rstar_tree):
     return outcomes
 
 
-def predict_label(rstar_tree, aggregation=MAJORITY, exec_signature=DEFAULT_EXEC_SIGNATURE):
+def predict_label(rstar_tree, aggregation=CLONE_ON_DISAGREEMENT,
+                  exec_signature=DEFAULT_EXEC_SIGNATURE):
     """Return the label ('clone'/'non-clone') for a question's tree, or None
     if no leaf node produced an answer that normalizes to clone/non-clone.
 
@@ -218,7 +219,8 @@ def predict_label(rstar_tree, aggregation=MAJORITY, exec_signature=DEFAULT_EXEC_
     return max(counts, key=counts.get)
 
 
-def evaluate(input_path, aggregation=MAJORITY, exec_signature=DEFAULT_EXEC_SIGNATURE):
+def evaluate(input_path, aggregation=CLONE_ON_DISAGREEMENT,
+             exec_signature=DEFAULT_EXEC_SIGNATURE):
     total = 0
     tp = fp = tn = fn = 0
     no_judgment = 0
@@ -318,12 +320,14 @@ def main():
                         help="run output .jsonl to score")
     parser.add_argument("output_path", nargs="?", type=Path, default=None,
                         help="where to write the report (default: alongside the input)")
-    parser.add_argument("--aggregation", choices=AGGREGATIONS, default=MAJORITY,
-                        help="how to combine a tree's leaf votes. 'majority' is the "
-                             "default and is what every existing _result file used. "
-                             "'clone-on-disagreement' answers clone whenever any leaf "
-                             "does -- only valid for a precision-heavy model; see "
-                             "predict_label().")
+    parser.add_argument("--aggregation", choices=AGGREGATIONS,
+                        default=CLONE_ON_DISAGREEMENT,
+                        help="how to combine a tree's leaf votes. "
+                             "'clone-on-disagreement' is the default on this branch: "
+                             "it answers clone whenever any leaf does, and is only "
+                             "valid for a precision-heavy model. 'majority' is the "
+                             "plain vote, and is what every _result file published "
+                             "before 2026-09-07 used. See predict_label().")
     parser.add_argument("--exec-signature", nargs="?", const="default", default="default",
                         help="answer clone whenever the tree contains a code step that "
                              "never actually ran. ON by default, using the validated set ("
@@ -356,7 +360,8 @@ def main():
     if output_path is None:
         # Non-default settings write to their own file, so re-scoring a run
         # never overwrites the report it was originally published with.
-        suffix = "_result" if args.aggregation == MAJORITY else f"_result.{args.aggregation}"
+        suffix = ("_result" if args.aggregation == CLONE_ON_DISAGREEMENT
+                  else f"_result.{args.aggregation}")
         if not exec_signature:
             suffix += ".no-exec-signature"
         elif exec_signature != DEFAULT_EXEC_SIGNATURE:

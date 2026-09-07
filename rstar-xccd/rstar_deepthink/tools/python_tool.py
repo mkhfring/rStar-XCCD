@@ -7,7 +7,7 @@ import re
 import sys
 from contextlib import redirect_stdout
 from io import StringIO
-from typing import Any, Dict, Optional, Tuple, Type, List
+from typing import Any, Dict, Optional, Type, List
 from pydantic import BaseModel, Field, root_validator
 from timeout_decorator import timeout
 
@@ -175,20 +175,8 @@ class PythonInterpreter(BaseModel):
     def _base_run(
         self,
         query: str,
-    ) -> Tuple[bool, str]:
-        """Run `query`, returning (nothing_was_raised, output_text).
-
-        The boolean is the authoritative "did this code raise?" signal.
-        Callers used to have to infer it by searching the output text for
-        the substring "error", which misfires in both directions: a program
-        that merely prints the word "error" as data looks like a crash, and
-        a sentinel message that happens to contain no such word looks like a
-        clean run.
-
-        Note that `_sub_run`'s own flag is *not* an error signal -- it only
-        reports whether the final statement was an expression (eval) or had
-        to be exec'd, and the exec fallback is a normal, successful path.
-        """
+    ) -> str:
+        """Use the tool."""
         def _sub_run(bodys):
             io_buffer = StringIO()
             module = ast.Module(bodys[:-1], type_ignores=[])
@@ -218,30 +206,31 @@ class PythonInterpreter(BaseModel):
             ret_strs = []
             if len(print_indexs) == 1:
                 run_flag, ret = _sub_run(tree.body)
-                return True, f"{ret}"
+                return f"{ret}"
             for start_idx, end_idx in zip([-1] + print_indexs, print_indexs):
                 node_source = ast.get_source_segment(query, tree.body[end_idx])
                 run_flag, ret = _sub_run(tree.body[start_idx + 1:end_idx + 1])
                 ret_strs.append(f"{extract_content(node_source)} {ret}")
-            return True, "".join(ret_strs)
+            return "".join(ret_strs)
         except Exception as e:
-            return False, "{}: {}".format(type(e).__name__, str(e))
-
+            return "{}: {}".format(type(e).__name__, str(e))
+    
     def run(
         self,
         query: str,
-    ) -> Tuple[bool, str]:
+    ) -> str:
 
         @timeout(TIMEOUT_SECONDS, use_signals=True, exception_message=TIMEOUT_MESSAGE)
-        def base_run(query: str) -> Tuple[bool, str]:
+        def base_run(query: str) -> str:
             return self._base_run(query)
-
+        
         try:
-            return base_run(query)
+            ret = base_run(query)
+            return ret
         except Exception as e:
             print(e)
             print(" exec code error ")
-            return False, "{}: {}".format(type(e).__name__, str(e))
+            return "{}: {}".format(type(e).__name__, str(e))
 
 
 def parse_args():
@@ -254,6 +243,5 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     tool = PythonInterpreter()
-    ran_without_raising, output = tool.run(args.testcase)
-    print(output)
-    sys.exit(0 if ran_without_raising else 1)
+    print(tool.run(args.testcase))
+    sys.exit(0)

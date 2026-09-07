@@ -27,7 +27,7 @@ import json
 import re
 import sys
 
-from evaluate_clone_results import normalize_label, node_sort_key, predict_label
+from evaluate_clone_results import MAJORITY, normalize_label, node_sort_key, predict_label
 
 # The canonical step structure from rstar_deepthink/few_shots/mcts_prompt.json.
 CANONICAL_TAGS = [
@@ -206,7 +206,7 @@ def report_diversity_ceiling(runs):
             # exec_signature=frozenset() because these tables were published
             # against leaf-vote-only scoring; predict_label() defaults the
             # exec-signature override on since 2026-09-07.
-            majority = predict_label(tree, exec_signature=frozenset())
+            majority = predict_label(tree, aggregation=MAJORITY, exec_signature=frozenset())
             current.append((ground_truth, majority))
             oracle.append((ground_truth, ground_truth if ground_truth in labels else majority))
         print(f"{name:15s} {instances:10d} {leaves / instances:13.2f} "

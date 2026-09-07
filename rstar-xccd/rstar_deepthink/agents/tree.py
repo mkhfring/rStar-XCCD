@@ -29,26 +29,8 @@ def tool_wrapper(tool):
 
 def no_action_wrapper(tool):
     def _tool(query):
-        return True, "No action, no observation. Please continue to solve."
+        return "No action, no observation. Please continue to solve."
     return _tool
-
-
-# How a python_interpreter step turned out. The scorer in mcts.py has to
-# tell these apart -- above all, whether any code actually ran -- and used
-# to infer it from the observation text, which cannot distinguish a sentinel
-# message from a successful run (see MCTS_SEARCH_SCORING.md).
-EXEC_OK = "ok"                              # ran to completion, nothing raised
-EXEC_ERROR = "error"                        # raised a non-assertion exception
-EXEC_ASSERTION_FAILED = "assertion_failed"  # raised AssertionError
-EXEC_NO_CODE = "no_code"                    # no runnable Python was produced
-EXEC_BLOCKED = "blocked"                    # tried to execute the non-Python side
-
-NO_CODE_MESSAGE = "No valid Python code found in the response."
-JAVA_BLOCKED_MESSAGE = (
-    "Java execution is not supported in this sandbox (no JDK on PATH). "
-    "Do not import java.* or shell out to java/javac; "
-    "reason about Code 2 (Java) by static analysis instead."
-)
 
 
 tools = {
@@ -158,18 +140,11 @@ def _get_root_question(node: Type[BaseNode]) -> str:
 def code_execution(
     node: Type[BaseNode],
     parser_result: Dict[str, str],
-) -> Tuple[str, str]:
-    """Execute a step's code, returning (observation, outcome).
+) -> str:
 
-    `outcome` is one of the EXEC_* constants above. It is derived from the
-    interpreter's own exception flag rather than from the observation text,
-    so callers can distinguish "the code ran and printed something" from
-    "nothing ran at all" -- a distinction the previous
-    `"error" not in observation.lower()` test could not make.
-    """
 
     @timeout(TIMEOUT_SECONDS, use_signals=True, exception_message=TIMEOUT_MESSAGE)
-    def _code_execution(node: Type[BaseNode], parser_result: Dict[str, str]) -> Tuple[str, str]:
+    def _code_execution(node: Type[BaseNode], parser_result: Dict[str, str]) -> str:
         # Define tool
         action = parser_result["action"]
         tool_func = tools[action]
@@ -183,9 +158,11 @@ def code_execution(
         if action == "python_interpreter":
             sanitized_code = sanitize_input(action_input)
             if not is_python_code(sanitized_code):
-                return NO_CODE_MESSAGE, EXEC_NO_CODE
+                return "No valid Python code found in the response."
             if is_java_execution_attempt(sanitized_code):
-                return JAVA_BLOCKED_MESSAGE, EXEC_BLOCKED
+                return ("Java execution is not supported in this sandbox (no JDK on PATH). "
+                        "Do not import java.* or shell out to java/javac; "
+                        "reason about Code 2 (Java) by static analysis instead.")
 
         # Write Code 1 as candidate_code.py so subprocess tests can run it.
         question = _get_root_question(node)
@@ -194,28 +171,15 @@ def code_execution(
             with open("candidate_code.py", "w") as f:
                 f.write(code1)
 
-        ran_without_raising, observation = tool_func(action_input)
-        observation = str(observation).strip()
+        observation = str(tool_func(action_input)).strip()
         del tool_func
-        if ran_without_raising:
-            outcome = EXEC_OK
-        elif observation.startswith("AssertionError"):
-            # Sub-classifying a genuine exception by the type name the
-            # interpreter itself formatted -- not a guess about whether an
-            # exception happened at all, which `ran_without_raising` already
-            # settled.
-            outcome = EXEC_ASSERTION_FAILED
-        else:
-            outcome = EXEC_ERROR
-        return observation, outcome
+        return observation
     try:
-        observation, outcome = _code_execution(node, parser_result)
+        observation = _code_execution(node, parser_result)
     except Exception as e:
-        # Anything escaping here (the timeout above included) is a failure.
         observation = "{}: {}".format(type(e).__name__, str(e))
-        outcome = EXEC_ASSERTION_FAILED if isinstance(e, AssertionError) else EXEC_ERROR
-
-    return observation, outcome
+    
+    return observation
 
 
 def collect_action_inputs(
@@ -242,8 +206,7 @@ def code_run(solution):
     def _code_execution(solution: str) -> str:
         tool_func = tools['python_interpreter']
         action_input = extract_program(solution)
-        _ran_without_raising, observation = tool_func(action_input)
-        observation = str(observation).strip()
+        observation = str(tool_func(action_input)).strip()
         del tool_func
         return observation
     

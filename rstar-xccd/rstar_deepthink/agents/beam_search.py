@@ -18,7 +18,7 @@ from rstar_deepthink.constants import (
     OUTPUT,
     OUTPUT_END,
 )
-from .tree import BaseTree, code_execution, EXEC_ERROR, EXEC_ASSERTION_FAILED
+from .tree import BaseTree, code_execution
 
 
 class BS(BaseTree):
@@ -169,26 +169,20 @@ class BS(BaseTree):
             new_node.state["text"] = step_result
             new_node.state["final_answer"] = parser_result["final_answer"]
         elif parser_result["action"]:
-            observation, exec_outcome = code_execution(node, parser_result)
+            observation = code_execution(node, parser_result)
             new_node.state["action"] = parser_result["action"]
             new_node.state["action_input"] = parser_result["action_input"]
             new_node.state["observation"] = observation
-            new_node.state["exec_outcome"] = exec_outcome
-            # The interpreter's own exception flag, rather than a substring
-            # search for "error" over the output text -- which both missed
-            # sentinel failures and fired on programs that merely printed
-            # the word as data.
-            code_failed = exec_outcome in (EXEC_ERROR, EXEC_ASSERTION_FAILED)
             if CODE_END in parser_result["action_input"]:
                 observation = self.obs_wrap(observation)
                 new_node.state["text"] = f"{step_result}{self.config.step_delim}{observation}"
-                if code_failed:
+                if "Error" in observation:
                     new_node.is_terminal = True
                     new_node.state["final_answer"] = TOO_MANY_CODE_ERRORS
             else:
                 new_node.state["text"] = step_result
-
-            if code_failed:
+                
+            if "error" in observation.lower():
                 observation = self.obs_wrap(observation)
                 step_result = step_result + CODE_END if CODE_END not in step_result else step_result
                 new_node.state["text"] = f"{step_result}{self.config.step_delim}{observation}"

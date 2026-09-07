@@ -1,5 +1,11 @@
 # Evaluator Changes: `--exec-signature`
 
+> **On the `final-for-clccd` branch** the default aggregation is
+> `clone-on-disagreement`, not `majority`, and the search scoring is
+> assert-consistency rather than exec-outcome. See `FINAL_FOR_CLCCD.md`.
+> Everything below describes the override itself, which is identical on
+> both branches.
+
 ## Why this exists
 
 `rstar-xccd/evaluate_clone_results.py` turns a finished MCTS run into
