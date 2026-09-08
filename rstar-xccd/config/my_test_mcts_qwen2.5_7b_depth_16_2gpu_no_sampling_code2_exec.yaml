@@ -1,0 +1,53 @@
+# Variant of my_test_mcts_qwen2.5_7b_depth_16_2gpu_no_sampling.yaml that swaps in mcts_prompt_code2_exec.json,
+# which tells the model it can compile/run Code 2 (Java/Rust) directly
+# via subprocess instead of only reasoning about it statically -- javac/java
+# and rustc are on PATH on this cluster (Narval) now (see tree.py's
+# stage_code2()). Everything else is identical to the base config, so any
+# F1 delta against the original final-for-clccd runs is attributable to
+# this one change.
+#
+# Qwen2.5-Coder-7B-Instruct, 2 GPU (tensor-parallel) config.
+# Identical to my_test_mcts_qwen2.5_3b_depth_16_2gpu_no_sampling.yaml except
+# for this header -- model_dir is supplied by the run script via --model_dir,
+# so the only thing that varies between the 3B and 7B depth-16 runs is the
+# checkpoint. Kept as a separate file anyway so a future 7B-specific change
+# (KV-cache headroom, max_model_len) can't silently alter the 3B runs.
+#
+# is_sampling: False -- the search must never see the ground-truth label, so
+# the comparison against the 3B and Qwen3-4B runs is like-for-like.
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_imprvoed.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt_code2_exec.json"
+
+swap_space: 8
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 2
+best_of: 2
+is_sampling: False
+iterations: 2
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 2
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 2

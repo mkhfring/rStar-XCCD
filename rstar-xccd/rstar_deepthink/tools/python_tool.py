@@ -3,7 +3,9 @@
 # Adapted from https://github.com/MARIO-Math-Reasoning/Super_MARIO
 import argparse
 import ast
+import os
 import re
+import subprocess
 import sys
 from contextlib import redirect_stdout
 from io import StringIO
@@ -14,6 +16,10 @@ from timeout_decorator import timeout
 
 TIMEOUT_SECONDS = 30
 TIMEOUT_MESSAGE = f"Execution of the code snippet has timed out for exceeding {TIMEOUT_SECONDS} seconds."
+
+# Wall-clock budget for staging Code 2 (javac/rustc + one run), separate from
+# TIMEOUT_SECONDS which bounds the model's own python_interpreter calls.
+CODE2_TOOL_TIMEOUT = 20
 
 def truncate_string(text, max_length=1024, is_evalf=True):
     # print(text, file=sys.stderr)
@@ -102,34 +108,23 @@ def is_python_code(query: str) -> bool:
     return len(tree.body) > 0
 
 
-JAVA_TOKEN_RE = re.compile(r"\bjavac?\b")
+CODE2_EXECUTION_TOKEN_RE = re.compile(r"\b(javac?|rustc|cargo|candidate_code2)\b")
 
 
-def is_java_execution_attempt(query: str) -> bool:
-    """Check whether a python_interpreter query tries to touch Java.
+def mentions_code2_execution(query: str) -> bool:
+    """Heuristic: does a python_interpreter query look like an attempt to
+    compile/run Code 2 (Java or Rust)?
 
-    `import java.util.Scanner;` is syntactically valid Python (a dotted
-    import), and `subprocess.run(["java", ...])` is itself valid Python, so
-    neither is caught by is_python_code. There is no JDK on PATH in this
-    sandbox, so both always fail at runtime (ModuleNotFoundError /
-    FileNotFoundError). Catch them ahead of execution instead.
+    Used only to decide whether it's worth spending a javac/rustc subprocess
+    call staging Code 2 for this step -- javac/java and rustc are on PATH on
+    this cluster (see stage_code2()), so unlike the pre-2026-09-08 version of
+    this check, a match is no longer treated as doomed-to-fail and blocked;
+    it just gates the (otherwise wasted, on every one of the many
+    Python-only test steps) compile attempt. A plain substring/regex check
+    is enough for that: false positives cost one extra compile, false
+    negatives just mean the model falls back to static reasoning as before.
     """
-    try:
-        tree = ast.parse(query)
-    except SyntaxError:
-        return False
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            if any(alias.name.split(".")[0] in ("java", "javax") for alias in node.names):
-                return True
-        elif isinstance(node, ast.ImportFrom):
-            if node.module and node.module.split(".")[0] in ("java", "javax"):
-                return True
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if JAVA_TOKEN_RE.search(node.value):
-                return True
-    return False
+    return bool(CODE2_EXECUTION_TOKEN_RE.search(query))
 
 
 def extract_code1_python(question: str) -> str:
@@ -148,6 +143,179 @@ def extract_code1_python(question: str) -> str:
     if end == -1:
         return ""
     return question[start:end]
+
+
+CODE2_MARKERS = {
+    "java": "Code 2: Java\n```java\n",
+    "rust": "Code 2: Rust\n```rust\n",
+}
+
+
+def extract_code2_source(question: str):
+    """Extract Code 2's language and source from a clone-detection question.
+
+    Returns (language, source) with language in {"java", "rust"}, or
+    (None, "") if Code 2 isn't in one of those languages, or the expected
+    fenced block isn't found (e.g. a different language pair).
+    """
+    for lang, marker in CODE2_MARKERS.items():
+        start = question.find(marker)
+        if start == -1:
+            continue
+        start += len(marker)
+        end = question.find("\n```", start)
+        if end == -1:
+            continue
+        return lang, question[start:end]
+    return None, ""
+
+
+JAVA_CLASS_RE = re.compile(r"\bclass\s+([A-Za-z_]\w*)")
+
+
+def java_class_name(source: str) -> Optional[str]:
+    """First top-level class name declared in a Java source, or None.
+
+    Java requires the file to be named after a `public` class, but the
+    snippets in this dataset are consistently package-private (`class Foo`,
+    no `public`), so any filename compiles -- we still name the file after
+    the class purely so `java <ClassName>` matches what a model would
+    naturally guess.
+    """
+    match = JAVA_CLASS_RE.search(source)
+    return match.group(1) if match else None
+
+
+# Rust path/module keywords that can appear as the first segment of a `use`
+# without naming an external crate.
+RUST_NON_CRATE_PATH_ROOTS = {"std", "core", "alloc", "self", "super", "crate"}
+# Not anchored to line start: attributes like `#[macro_use]` routinely share
+# a line with the `extern crate`/`use` they annotate.
+RUST_USE_CRATE_RE = re.compile(r"\buse\s+([A-Za-z_]\w*)")
+RUST_EXTERN_CRATE_RE = re.compile(r"\bextern\s+crate\s+([A-Za-z_]\w*)")
+
+
+def rust_external_crates(source: str) -> set:
+    """Non-std crate names a Rust snippet 'use's or pulls in via 'extern crate'.
+
+    These would need `cargo` to fetch from crates.io, which requires network
+    access this sandbox's compute nodes don't have (only the cluster's login
+    nodes do). A non-empty result means the snippet can't be compiled here
+    with plain `rustc`.
+    """
+    crates = set(RUST_USE_CRATE_RE.findall(source)) | set(RUST_EXTERN_CRATE_RE.findall(source))
+    return crates - RUST_NON_CRATE_PATH_ROOTS
+
+
+# Suffixes of the code/build artifacts a step can leave in the working
+# directory: our own staging (candidate_code.py, <Class>.java + the .class
+# files javac emits, candidate_code2.rs + its binary) and whatever the model's
+# test code writes for itself. The model names those files after the problem
+# rather than by any convention -- past runs left pascal.py, dodecagonal.py,
+# code_1.py, temp.rs and temp_rust_code.rs sitting in the repo root -- so
+# matching on suffix is the only thing that catches them.
+#
+# The cost of including .py: a .py file that appears in the working directory
+# during a step is deleted at the end of it, so don't write scratch scripts
+# into the repo root while a run is in flight (a subdirectory is untouched --
+# cleanup is non-recursive, and it only ever removes files that were not
+# there when the step started).
+# .o is here because rustc writes its codegen units as <name>.*.rcgu.o next
+# to the source and only removes them once linking finishes -- a compile the
+# step timeout kills partway through leaves them behind (three were found in
+# the repo root, all stamped inside one run's window).
+GENERATED_CODE_SUFFIXES = (".java", ".class", ".rs", ".py", ".o")
+
+
+def snapshot_dir(workdir: str = ".") -> set:
+    """Names currently in workdir, to diff against in cleanup_generated_code()."""
+    try:
+        return set(os.listdir(workdir))
+    except OSError:
+        return set()
+
+
+def cleanup_generated_code(before: set, workdir: str = ".") -> None:
+    """Delete generated code/build artifacts that appeared since `before`.
+
+    Called after every execution so the repository doesn't silt up with one
+    file per question. Deliberately diff-based rather than a fixed list:
+    the model names its own scratch files, so a fixed list would miss them.
+    Only regular files matching GENERATED_CODE_SUFFIXES -- or new
+    extension-less executables, which is what rustc emits -- are removed;
+    directories and everything else new are left untouched.
+    """
+    for name in snapshot_dir(workdir) - before:
+        path = os.path.join(workdir, name)
+        if not os.path.isfile(path):
+            continue
+        _, ext = os.path.splitext(name)
+        if ext not in GENERATED_CODE_SUFFIXES and not (ext == "" and os.access(path, os.X_OK)):
+            continue
+        try:
+            os.remove(path)
+        except OSError:
+            # Best effort: a concurrent job on the same working directory may
+            # have removed it already. Never let cleanup fail a search step.
+            pass
+
+
+def stage_code2(language: Optional[str], source: str, workdir: str = ".") -> str:
+    """Write Code 2 to disk and, for java/rust, compile it so the model's own
+    subprocess calls (mirroring how it already runs candidate_code.py for
+    Code 1) can invoke it directly instead of only reasoning about it.
+
+    Returns a short status string describing what's ready to run, or why
+    nothing is: this is meant to be appended to the tool observation so the
+    model knows whether to attempt execution or fall back to static
+    reasoning, without spending a turn discovering it by trial and error.
+    """
+    if not source:
+        return ""
+
+    if language == "java":
+        class_name = java_class_name(source) or "Code2"
+        src_path = os.path.join(workdir, f"{class_name}.java")
+        with open(src_path, "w") as f:
+            f.write(source)
+        try:
+            compile_proc = subprocess.run(
+                ["javac", src_path], cwd=workdir, capture_output=True, text=True,
+                timeout=CODE2_TOOL_TIMEOUT,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            return f"Code 2 staged at {src_path}, but javac is unavailable: {e}"
+        if compile_proc.returncode != 0:
+            return (f"Code 2 staged at {src_path}, but `javac {src_path}` failed:\n"
+                     f"{compile_proc.stderr.strip()[:500]}")
+        return (f"Code 2 (Java) compiled: run it with "
+                f"subprocess.run([\"java\", \"-cp\", {workdir!r}, {class_name!r}], "
+                f"input=..., capture_output=True, text=True).")
+
+    if language == "rust":
+        external = rust_external_crates(source)
+        if external:
+            return (f"Code 2 uses external crate(s) {sorted(external)}, which this "
+                     "offline sandbox cannot fetch (no network on compute nodes). "
+                     "Reason about its expected behavior instead of executing it.")
+        src_path = os.path.join(workdir, "candidate_code2.rs")
+        bin_path = os.path.join(workdir, "candidate_code2")
+        with open(src_path, "w") as f:
+            f.write(source)
+        try:
+            compile_proc = subprocess.run(
+                ["rustc", src_path, "-o", bin_path], cwd=workdir, capture_output=True,
+                text=True, timeout=CODE2_TOOL_TIMEOUT,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            return f"Code 2 staged at {src_path}, but rustc is unavailable: {e}"
+        if compile_proc.returncode != 0:
+            return (f"Code 2 staged at {src_path}, but `rustc {src_path}` failed:\n"
+                     f"{compile_proc.stderr.strip()[:500]}")
+        return (f"Code 2 (Rust) compiled to {bin_path}: run it with "
+                f"subprocess.run([{bin_path!r}], input=..., capture_output=True, text=True).")
+
+    return ""
 
 
 class PythonInputs(BaseModel):

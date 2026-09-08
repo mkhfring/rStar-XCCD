@@ -154,6 +154,9 @@ activemq-data/
 env/
 venv/
 venv
+# No trailing slash: this and `venv` above are symlinks into another
+# checkout, and a directory pattern would not match a symlink.
+venv-qwen3
 ENV/
 env.bak/
 venv.bak/
@@ -224,6 +227,7 @@ test_file_feeds/
 qwen-inference/
 rstar-xccd/models/
 rstar-xccd/eval_data/
+rstar-xccd/pure_inference/
 rstar-xccd/candidate_code.py
 
 # Log files (including SLURM-style *.log.out / *.log.err)

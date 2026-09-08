@@ -12,7 +12,7 @@ from omegaconf import DictConfig, OmegaConf
 from timeout_decorator import timeout
 from rstar_deepthink.config import BaseConfig
 from rstar_deepthink.nodes.base_node import BaseNode
-from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, sanitize_input, is_python_code, is_java_execution_attempt
+from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, extract_code2_source, stage_code2, mentions_code2_execution, sanitize_input, is_python_code, snapshot_dir, cleanup_generated_code
 from rstar_deepthink.constants import TIMEOUT_SECONDS, TIMEOUT_MESSAGE, CODE_END, OUTPUT_END, CODE, ANSWER
 
 
@@ -159,20 +159,40 @@ def code_execution(
             sanitized_code = sanitize_input(action_input)
             if not is_python_code(sanitized_code):
                 return "No valid Python code found in the response."
-            if is_java_execution_attempt(sanitized_code):
-                return ("Java execution is not supported in this sandbox (no JDK on PATH). "
-                        "Do not import java.* or shell out to java/javac; "
-                        "reason about Code 2 (Java) by static analysis instead.")
+
+        question = _get_root_question(node)
+
+        # Taken before anything is staged so the cleanup below also reclaims
+        # candidate_code.py and the Code 2 artifacts, not just whatever the
+        # model's own test code writes.
+        before_files = snapshot_dir()
 
         # Write Code 1 as candidate_code.py so subprocess tests can run it.
-        question = _get_root_question(node)
         code1 = extract_code1_python(question)
         if code1:
             with open("candidate_code.py", "w") as f:
                 f.write(code1)
 
-        observation = str(tool_func(action_input)).strip()
+        # Only stage/compile Code 2 (javac/java, rustc are on PATH on this
+        # cluster) when the step actually looks like it's trying to run it --
+        # avoids a wasted compile subprocess on every one of the many
+        # Python-only test steps.
+        code2_status = ""
+        if action == "python_interpreter" and mentions_code2_execution(sanitized_code):
+            code2_lang, code2_source = extract_code2_source(question)
+            if code2_source:
+                code2_status = stage_code2(code2_lang, code2_source)
+
+        try:
+            observation = str(tool_func(action_input)).strip()
+        finally:
+            # in a finally so a timeout or a raising step still cleans up;
+            # every step re-stages what it needs, so nothing downstream
+            # depends on these files surviving.
+            cleanup_generated_code(before_files)
         del tool_func
+        if code2_status:
+            observation = f"{observation}\n{code2_status}"
         return observation
     try:
         observation = _code_execution(node, parser_result)
@@ -206,7 +226,14 @@ def code_run(solution):
     def _code_execution(solution: str) -> str:
         tool_func = tools['python_interpreter']
         action_input = extract_program(solution)
-        observation = str(tool_func(action_input)).strip()
+        before_files = snapshot_dir()
+        try:
+            observation = str(tool_func(action_input)).strip()
+        finally:
+            # Same reason as in code_execution(): the re-run of a finished
+            # solution writes the same scratch files, and they would
+            # otherwise accumulate in the repository.
+            cleanup_generated_code(before_files)
         del tool_func
         return observation
     
