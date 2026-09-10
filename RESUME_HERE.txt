@@ -1,0 +1,240 @@
+================================================================================
+ rStar-XCCD -- Code-2 execution experiment: status handoff
+ Written 2026-09-08 ~03:58 EDT.  Project: /project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD
+================================================================================
+
+--------------------------------------------------------------------------------
+PASTE THIS INTO A NEW CLAUDE CODE SESSION TO GET AN UPDATE
+--------------------------------------------------------------------------------
+Read RESUME_HERE.txt in /lustre06/project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD
+and give me a status update on the Code-2 execution experiment: which of the
+jobs listed there finished, what the recovery / Code-2 compile numbers are for
+each, and how the rust v3 runs (first ever with a working rustc) compare to
+v1 and v2. Use the "HOW TO SCORE THE RESULTS" section -- do not re-derive the
+scoring, import predict_label from evaluate_clone_results.py.
+--------------------------------------------------------------------------------
+
+
+1. WHAT THE EXPERIMENT IS
+--------------------------------------------------------------------------------
+The Code-2-execution change (stage_code2() in rstar_deepthink/tools/python_tool.py)
+lets the MCTS search compile and RUN the second code snippet (Java/Rust) instead
+of only reasoning about its expected output. Question: does that recover clone
+pairs the models previously got wrong?
+
+Retry dataset = samples BOTH Qwen2.5-Coder-7B and Qwen3-8B got wrong in the
+final-for-clccd runs (built by rstar-xccd/build_failed_dataset.py):
+    eval_data/failed_both_python_java_CLCCD.jsonl   45 samples (all FN on true clones)
+    eval_data/failed_both_python_rust_CLCCD.jsonl   20 samples (19 FN + 1 FP)
+Baseline is 0/65 correct BY CONSTRUCTION, so any correct answer is a recovery.
+
+CAVEAT THAT MATTERS: the set is 98% ground-truth "clone", so ANY drift toward
+answering "clone" scores well here while potentially destroying precision on the
+full 1800/1200. This subset cannot measure precision. Also temperature=0.7, so
+part of any gain is rerun variance (no control run has been done).
+
+
+2. JOBS  (check with: squeue -u khajezad   /   sacct -j <id> --format=JobID,JobName%24,State,Elapsed)
+--------------------------------------------------------------------------------
+DONE:
+  2654418  q2.5-7b-retry-java      v1   COMPLETED  tag code2-exec-lang-fewshot
+  2654420  q2.5-7b-retry-rust      v1   COMPLETED
+  2654422  q3-8b-retry-java        v1   COMPLETED
+  2654423  q3-8b-retry-rust        v1   COMPLETED
+  2655512  q2.5-7b-retry-java-v2   v2   COMPLETED  tag code2-exec-lang-fewshot-v2
+  2655514  q2.5-7b-retry-rust-v2   v2   COMPLETED
+  2655516  q3-8b-retry-rust-v2     v2   COMPLETED
+
+IN FLIGHT at time of writing:
+  2655515  q3-8b-retry-java-v2     v2   RUNNING (was 23/45 at 03:49; slow, ~1 q/min)
+  2656933  q2.5-7b-retry-rust-v3   v3   RUNNING  tag code2-exec-ldpreload-fix
+  2656934  q3-8b-retry-rust-v3     v3   RUNNING  tag code2-exec-ldpreload-fix
+
+v3 = same v2 prompts, but WITH the LD_PRELOAD fix (see section 4). These are the
+first rust runs in which rustc can actually compile anything.
+
+
+3. RESULTS SO FAR
+--------------------------------------------------------------------------------
+run                       n   correct  C2 compiled  unparsable  only-import  no-code
+Qwen2.5-7B java v1       45     27          7          20            1        17
+Qwen2.5-7B java v2       45     29         10          14            0        23
+Qwen3-8B   java v1       45     10          6           0           19         0
+Qwen3-8B   java v2   (partial, 22)  6      16           0            0         0
+Qwen2.5-7B rust v1       20     12          0           8            1         -
+Qwen2.5-7B rust v2       20     10          0           4            0         -
+Qwen3-8B   rust v1       20      7          0           0           14         -
+Qwen3-8B   rust v2       20      1          0           0            0         -
+
+Headline findings:
+ * UPTAKE FIXED. Qwen3-8B java Code-2 compiles went 6/45 (13%) -> 16/22 (73%).
+   The "only import subprocess" dead-step pattern went 19 -> 0.
+   Qwen3-8B rust attempts went 0/20 -> 15/20.
+ * ACCURACY HAS NOT CLEARLY MOVED. 7B java 27->29. 8B java flat. This is the
+   main open question.
+ * v1 signal that held up: when Code 2 actually ran, java accuracy was 11/13
+   (84.6%) vs 26/77 (33.8%) when it did not. Fisher exact two-sided p=0.0013.
+   Correlational -- the model chooses when to invoke it.
+ * 8B rust v2 accuracy COLLAPSED 7 -> 1 because it finally tried to run Code 2
+   and every compile failed (the LD_PRELOAD bug). v3 should reverse this.
+
+
+3b. UPDATE 04:05 EDT -- Qwen3-8B RUST v3 COMPLETE (first run with a working rustc)
+--------------------------------------------------------------------------------
+Qwen3-8B rust      n   correct  attempted  compiled  crate-declined  rustc-failed
+v1                20      7          0         0            0             0
+v2                20      1         15         0            6             9
+v3 (LD_PRELOAD fix) 20    6         18        11            7             0
+
+ * The toolchain is fixed: rustc failures 9 -> 0, compiles 0 -> 11, attempts 18/20.
+ * BUT accuracy is 6/20, still below v1's 7/20. Every error is the same kind:
+   truth=clone -> pred=non-clone (14 of them).
+ * Conditional accuracy WHEN Code 2 compiled: 5/11 = 45%. Compare java v1, where
+   the same conditional was 11/13 = 85%. So on rust, actually running Code 2 is
+   NOT flipping the verdict the way it does on java.
+ * Interpretation to test next: 7/20 rust snippets are declined for real external
+   crates (proconio etc.), and rust Code 1/Code 2 pairs may differ in output
+   formatting (trailing newline, float formatting) so that a correct clone pair
+   still produces unequal stdout and the model reads that as evidence of
+   NON-equivalence. Worth checking the compared outputs directly before
+   concluding the approach fails on rust.
+
+
+3c. FINAL RESULTS 04:10 EDT -- ALL JOBS COMPLETE
+--------------------------------------------------------------------------------
+run                 n  correct  attempted  compiled  accuracy|compiled
+7B java v1         45     27        21         7      7/7  = 100%
+7B java v2         45     29        20        10      9/10 =  90%
+8B java v1         45     10         6         6      4/6  =  67%
+8B java v2         45      9        33        33      9/33 =  27%
+7B rust v1         20     12         9         0        -
+7B rust v2         20     10         7         0        -
+7B rust v3         20     13        11         5      5/5  = 100%
+8B rust v1         20      7         0         0        -
+8B rust v2         20      1        15         0        -
+8B rust v3         20      6        18        11      5/11 =  45%
+
+TOTALS over the 130-sample retry set:
+   v1 = 56/130      v2 = 49/130      rust v3 19/40 vs rust v1 19/40 (identical)
+
+CONCLUSION: THE ENGINEERING WORKED, THE HYPOTHESIS DID NOT (on this subset).
+ * Every mechanical goal was met: uptake 13%->73% (8B java), rust toolchain
+   fixed (0 -> 11 compiles), dead-import step eliminated, truncation halved.
+ * None of it produced a net accuracy gain. v2 (49) is slightly WORSE than
+   v1 (56). Rust v3 (19/40) exactly equals rust v1 (19/40).
+
+*** CORRECTION TO AN EARLIER CLAIM IN THIS FILE (section 3) ***
+The v1 finding "when Code 2 ran, accuracy was 84.6% vs 33.8%, p=0.0013" was a
+SELECTION EFFECT, not a causal one. v2 is the near-experimental test: forcing
+8B java Code-2 execution from 6 to 33 questions dropped conditional accuracy
+from 4/6 (67%) to 9/33 (27%), and total correct went 10 -> 9. When the model
+rarely reached for Code 2 it did so on cases it was already going to get right.
+Do not cite the p=0.0013 result as evidence that execution causes correctness.
+
+WHAT IS STILL WORTH SALVAGING
+ * 7B is the opposite of 8B: 7B java v2 27->29 and 7B rust v3 12->13, with
+   conditional accuracy 90-100%. 7B reaches for Code 2 more selectively and
+   benefits when it does. The models behave differently enough that a single
+   prompt for both may be the wrong design.
+ * The LD_PRELOAD fix is a genuine bug fix independent of the hypothesis and
+   should be committed regardless.
+ * All errors remain truth=clone -> pred=non-clone. Hypothesis worth testing
+   before abandoning the approach: when a true clone pair prints subtly
+   different stdout (trailing newline, float vs int formatting, "2.0" vs "2"),
+   the model reads unequal output as proof of NON-equivalence, so execution
+   actively misleads. Check the compared outputs directly -- if this is real,
+   normalising the comparison (or telling the model to normalise) could turn
+   the null result around.
+
+
+4. THE LD_PRELOAD BUG (found + fixed 2026-09-08, uncommitted)
+--------------------------------------------------------------------------------
+The slurm scripts export LD_PRELOAD=libnccl.so.2 for vLLM. rustc inherits it when
+it shells out to link; that shell is an old glibc-2.24 nix build that cannot meet
+libnccl's GLIBC_2.34 requirement, so EVERY rustc call died with
+  "error: linking with `cc` failed: exit status: 1"
+javac is unaffected (not a cc wrapper) -- which is why Java always worked and
+Rust NEVER compiled, in any run, including the original harness commit.
+
+FIX: _compiler_env() in rstar_deepthink/tools/python_tool.py returns os.environ
+minus LD_PRELOAD; both the javac and rustc subprocess.run() calls in stage_code2()
+now pass env=_compiler_env().
+
+VERIFIED with LD_PRELOAD actually set, over all 20 rust failure samples:
+    compiled OK 0 -> 13 ; declined (real external crates) 7 ; still failing 0
+The 7 declines are legitimate: proconio / itertools / petgraph need network.
+Safe because vLLM already dlopened NCCL at start-up, and running the compiled
+binary / python3 / java under LD_PRELOAD was verified fine -- only the COMPILE
+step needed it stripped.
+
+
+5. HOW TO SCORE THE RESULTS
+--------------------------------------------------------------------------------
+cd /lustre06/project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD/rstar-xccd
+source ../venv/bin/activate          # venv-qwen3 for Qwen3 models
+python - <<'PY'
+import json, glob, re, sys
+sys.path.insert(0,'.')
+from evaluate_clone_results import predict_label          # frozen CLCCD config
+for tag in ("fewshot.","fewshot-v2.","ldpreload-fix."):
+    for f in sorted(glob.glob(f"eval_data/failed_both_python_*code2-exec-{'lang-' if 'fewshot' in tag else ''}{tag}*.jsonl")):
+        if f.endswith("_result"): continue
+        n=ok=comp=0
+        for line in open(f,encoding='utf-8'):
+            line=line.strip()
+            if not line: continue
+            r=json.loads(line)
+            if "question" not in r: continue
+            n+=1
+            obs=[(x.get("observation") or "") for x in r["rstar"].values() if isinstance(x,dict)]
+            if any("compiled" in o for o in obs): comp+=1
+            if predict_label(r["rstar"])==(r.get("answer") or "").lower(): ok+=1
+        print(f"{n:>4} {ok:>4} correct {comp:>4} C2-compiled  {f.split('.mcts.')[1][:70]}")
+PY
+
+Output files are named:
+  eval_data/failed_both_python_<pair>_CLCCD_depth_16.jsonl.mcts.<MODEL>.<TAG>.<ts>.jsonl
+Tags: code2-exec-lang-fewshot (v1) / -v2 (v2) / code2-exec-ldpreload-fix (v3).
+
+
+6. FILES CREATED THIS SESSION (ALL UNCOMMITTED)
+--------------------------------------------------------------------------------
+modified: rstar-xccd/rstar_deepthink/tools/python_tool.py   <- the LD_PRELOAD fix
+new:      rstar-xccd/build_failed_dataset.py
+new:      rstar_deepthink/few_shots/few_shot_code2_exec_python_{java,rust}{,_v2}.json
+new:      rstar_deepthink/few_shots/mcts_prompt_code2_exec_python_{java,rust}{,_v2}.json
+new:      config/my_test_mcts_{qwen2.5_7b,qwen3_8b}_depth_16_1gpu_no_sampling_code2_exec_{java,rust}{,_v2}.yaml
+new:      SMOKE_TEST_ISOLATION.md  (committed earlier, a58fa19)
+launchers (NOT trackable -- .gitignore ignores *.sh):
+          Qwen2.5/run_rstar_mcts_slurm_failed_retry_code2_exec_qwen2.5_7b_{java,rust}{,_v2}.sh
+          Qwen2.5/..._qwen2.5_7b_rust_v3_ldfix.sh
+          Qwen3/run_rstar_mcts_slurm_failed_retry_code2_exec_qwen3_8b_{java,rust}{,_v2}.sh
+          Qwen3/..._qwen3_8b_rust_v3_ldfix.sh
+
+v1 prompt/config files are deliberately kept alongside v2 so completed runs stay
+reproducible against the prompt they were actually made with (repo convention).
+
+
+7. WHAT TO DO NEXT
+--------------------------------------------------------------------------------
+a) When 2656933 / 2656934 finish: score rust v3 vs v1/v2. This is the first real
+   test of rust Code-2 execution. Expect compiles ~13/20; watch whether Qwen3-8B
+   rust recovers from its 1/20.
+b) Commit the LD_PRELOAD fix + build_failed_dataset.py + prompts + configs.
+c) CONTROL RUN: same 65 samples under the generic _code2_exec config, to separate
+   prompt effect from temperature=0.7 rerun variance.
+d) THE REAL TEST: full 1800 (java) + 1200 (rust) run with the fixed harness and
+   v2 prompts, scored with evaluate_clone_results.py defaults. That is the only
+   thing that includes negatives and therefore measures PRECISION. Everything so
+   far is diagnostics on a deliberately clone-skewed subset.
+
+KNOWN BUGS STILL UNFIXED
+ * tree.py _code_execution(): when the model's own code raises, the outer handler
+   replaces the observation with just the exception text and DISCARDS code2_status,
+   so the model never learns Code 2 was compiled and ready.
+ * rust_external_crates() flags a local `struct Node` as an external crate
+   (2 false declines seen).
+ * Qwen3-8B python-rust final-for-clccd run is INCOMPLETE (723/1200, killed by
+   wall clock), so the rust failure set is drawn from that prefix only; more
+   joint failures likely exist in the unscored 477.
+================================================================================

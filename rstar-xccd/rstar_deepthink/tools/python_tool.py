@@ -260,6 +260,28 @@ def cleanup_generated_code(before: set, workdir: str = ".") -> None:
             pass
 
 
+def _compiler_env() -> dict:
+    """os.environ minus LD_PRELOAD, for compiler subprocesses.
+
+    The slurm scripts export LD_PRELOAD=libnccl.so.2 so vLLM links against a
+    newer NCCL than its bundled PyTorch was built for. rustc inherits that
+    when it shells out to link, and the shell it uses for that step is an old
+    glibc-2.24 nix build which cannot satisfy libnccl's GLIBC_2.34
+    requirement -- so every rustc invocation under a job script died with
+    "error: linking with `cc` failed", and no Rust Code 2 has ever compiled
+    in a real run. javac is unaffected (it is not a cc wrapper), which is why
+    Java worked throughout.
+
+    Dropping the variable for the compiler subprocess only is safe: this
+    process already dlopened NCCL at vLLM start-up, so nothing here unloads
+    it, and running the compiled binary under LD_PRELOAD is fine -- verified
+    for the rust binary, python3 and java alike.
+    """
+    env = os.environ.copy()
+    env.pop("LD_PRELOAD", None)
+    return env
+
+
 def stage_code2(language: Optional[str], source: str, workdir: str = ".") -> str:
     """Write Code 2 to disk and, for java/rust, compile it so the model's own
     subprocess calls (mirroring how it already runs candidate_code.py for
@@ -281,6 +303,7 @@ def stage_code2(language: Optional[str], source: str, workdir: str = ".") -> str
         try:
             compile_proc = subprocess.run(
                 ["javac", src_path], cwd=workdir, capture_output=True, text=True,
+                env=_compiler_env(),
                 timeout=CODE2_TOOL_TIMEOUT,
             )
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
@@ -305,7 +328,7 @@ def stage_code2(language: Optional[str], source: str, workdir: str = ".") -> str
         try:
             compile_proc = subprocess.run(
                 ["rustc", src_path, "-o", bin_path], cwd=workdir, capture_output=True,
-                text=True, timeout=CODE2_TOOL_TIMEOUT,
+                text=True, timeout=CODE2_TOOL_TIMEOUT, env=_compiler_env(),
             )
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
             return f"Code 2 staged at {src_path}, but rustc is unavailable: {e}"
