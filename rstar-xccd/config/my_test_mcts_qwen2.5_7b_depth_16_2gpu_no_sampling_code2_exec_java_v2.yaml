@@ -1,0 +1,52 @@
+# 2-GPU (tensor-parallel) full-dataset variant of
+# my_test_mcts_qwen2.5_7b_depth_16_1gpu_no_sampling_code2_exec_java_v2.yaml.
+# Only tp differs -- see the generic my_test_mcts_qwen2.5_7b_depth_16_2gpu_no_sampling_code2_exec.yaml
+# for why full-dataset runs use 2 GPUs while the 65-sample retry experiment used 1.
+#
+# few_shot_code2_exec_python_java_v2.json / mcts_prompt_code2_exec_python_java_v2.json:
+# the java-specific code2-exec prompt pair, v2 (adds the "keep <code> steps
+# short" rule -- see RESUME_HERE.txt section 3, "truncation halved"). This is
+# the best-performing 7B java configuration measured on the 45-sample retry
+# set (29/45 correct, 90% conditional accuracy when Code 2 actually
+# compiled), and the only one where the language-specific prompt clearly beat
+# the generic bare-capability control (29 vs 18 on that same subset). Used
+# here for the full 1800-question python-java CLCCD run -- see RESUME_HERE.txt
+# section 7d.
+#
+# is_sampling: False -- the search must never see the ground-truth label.
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_code2_exec_python_java_v2.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt_code2_exec_python_java_v2.json"
+
+swap_space: 8
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 2
+best_of: 2
+is_sampling: False
+iterations: 2
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 2
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 2

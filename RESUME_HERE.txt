@@ -1,6 +1,8 @@
 ================================================================================
  rStar-XCCD -- Code-2 execution experiment: status handoff
  Written 2026-09-08 ~03:58 EDT.  Project: /project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD
+ LAST UPDATED: 2026-09-11 17:52 EDT (section 3e below is the newest content --
+ search for "LAST UPDATED" to jump straight to it in a new session).
 ================================================================================
 
 --------------------------------------------------------------------------------
@@ -131,6 +133,51 @@ from 4/6 (67%) to 9/33 (27%), and total correct went 10 -> 9. When the model
 rarely reached for Code 2 it did so on cases it was already going to get right.
 Do not cite the p=0.0013 result as evidence that execution causes correctness.
 
+3d. UPDATE 2026-09-09 -- CONTROL RUN COMPLETE (branch code2-exec-generic-control)
+--------------------------------------------------------------------------------
+Same 130-sample retry set, LD_PRELOAD fix in place, but under the GENERIC
+code2-exec config (few_shot_imprvoed.json + mcts_prompt_code2_exec.json: bare
+"you can compile/run Code 2" permission, no language-specific worked examples,
+no rule-7 rewrite closing the "not code clones" exit). Launchers:
+Qwen2.5/..._{java,rust}_control.sh, Qwen3/..._{java,rust}_control.sh (jobs
+2757014-2757017, all COMPLETED, temperature=0.7, no seed control).
+
+run                 n  correct  attempted*  compiled*
+7B java control    45     18        ~8         ~2
+8B java control    45     14        ~4         ~3
+7B rust control    20      9        ~4         ~0
+8B rust control    20      6        ~3         ~2
+TOTAL             130     47
+
+*The generic prompt has the model hand-write its own javac/rustc subprocess
+calls instead of naming java/javac and letting stage_code2() auto-compile, so
+there is no harness-injected "compiled" observation string to count against.
+attempted/compiled above are a rough text-search proxy (grep the full step
+text for javac/rustc + absence of failure markers) and are NOT directly
+comparable to the v1/v2/v3 attempted/compiled columns. `correct` uses the
+identical predict_label scorer and IS directly comparable.
+
+Comparison to v1 (language-specific fewshot):
+  7B java   27 (v1) vs 18 (control)  -- fewshot prompt clearly helps 7B
+  7B rust   12 (v1) vs  9 (control)  -- fewshot prompt clearly helps 7B
+  8B java   10 (v1) vs 14 (control)  -- fewshot prompt HURT 8B (control is higher)
+  8B rust    7 (v1) vs  6 (control)  -- roughly a wash
+  TOTAL     56 (v1) vs 47 (control)
+
+FINDING: the 7B/8B split from section 3c's "WHAT IS STILL WORTH SALVAGING"
+sharpens further. For 7B, the careful language-specific prompt is doing real
+work (27/12 vs 18/9) on top of whatever bare rerun-at-temp-0.7 gives you. For
+8B, the specific prompt is actively counterproductive on java (10 < 14) and a
+wash on rust (7 vs 6) -- 8B does BETTER with the bare generic permission and
+almost no forced uptake (~4-8 attempts out of 45/20) than with the engineered
+fewshot/rule-7 prompt that tries to force it to test. This is consistent with
+the v2 result in section 3c (forcing 8B java uptake 6->33 dropped accuracy
+10->9): for 8B specifically, more Code-2 execution keeps looking like it hurts
+rather than helps, regardless of which prompt is doing the forcing.
+
+Still unresolved by this control: how much of the 7B gain is prompt effect vs
+this specific temp=0.7 sample draw, since no run here uses more than one seed.
+
 WHAT IS STILL WORTH SALVAGING
  * 7B is the opposite of 8B: 7B java v2 27->29 and 7B rust v3 12->13, with
    conditional accuracy 90-100%. 7B reaches for Code 2 more selectively and
@@ -145,6 +192,67 @@ WHAT IS STILL WORTH SALVAGING
    actively misleads. Check the compared outputs directly -- if this is real,
    normalising the comparison (or telling the model to normalise) could turn
    the null result around.
+
+
+3e. UPDATE 2026-09-11 17:52 EDT -- FULL-DATASET REAL TEST + PURE-INFERENCE COMPARISON
+--------------------------------------------------------------------------------
+This is item 7(d) from the original "WHAT TO DO NEXT" list: the full 1800
+(java) + 1200 (rust) CLCCD run, LD_PRELOAD fix + v2 prompts, scored with
+evaluate_clone_results.py defaults. Unlike every result above (all drawn from
+the 98%-clone retry subset), this run includes negatives, so it is the first
+one in this experiment that can measure precision.
+
+Jobs: 2761458 (rust, COMPLETED, 05:02:15) / 2763027 (java, COMPLETED, 08:23:04).
+Files: eval_data/test_python_{java,rust}_CLCCD_depth_16.jsonl.mcts.
+       Qwen2.5-Coder-7B-Instruct.code2-exec-lang-fewshot-v2.<ts>.jsonl
+
+Qwen2.5-Coder-7B, full test sets, three-way comparison:
+                        java                          rust
+                  P       R       F1    n-jdg   P       R       F1    n-jdg
+pre-code2-exec  .9792   .8889   .9319   1800/0  .8147   .7767   .7952  1200/0
+  (final-for-clccd baseline, MCTS search, no Code-2 execution)
+code2-exec v2   .9790   .9406   .9595   1793/7  .7692   .8754   .8189  1197/3
+  (MCTS search + Code-2 execution, this experiment)
+pure inference  1.0000  .9033   .9492   1800/0  .9959   .8033   .8893  1200/0
+  (single forward pass, no MCTS search at all -- pure_inference/offline_results/
+   test_python_{java,rust}_CLCCD.jsonl_qwen25-7b_*)
+
+FINDING 1 -- reverses section 3c's conclusion:
+On the full, balanced dataset (unlike the clone-skewed retry subset), Code-2
+execution v2 IS a net win over the pre-code2-exec MCTS baseline on both
+languages: java F1 +2.76 pts (recall 88.9%->94.1%, precision flat at ~97.9%),
+rust F1 +2.37 pts (recall 77.7%->87.5%, precision cost 81.5%->76.9%). The
+recall gains seen on the retry subset were real and survive the full-precision
+test; section 3c's "the hypothesis did not [hold]" was an artifact of testing
+on a subset that could not measure precision.
+
+FINDING 2 -- new comparison, not previously run: MCTS (with or without
+Code-2 execution) vs plain single-pass pure inference.
+ * JAVA: code2-exec v2 (F1 .9595) beats pure inference (F1 .9492) by a small
+   margin (+1.0 pt) -- MCTS search + Code-2 execution is worth it here, barely.
+ * RUST: pure inference WINS outright, F1 .8893 vs v2's .8189 (-7.0 pts for
+   the MCTS+code2-exec pipeline). Pure inference gets 99.6% precision (almost
+   no false positives) at 80.3% recall; forcing Code-2 execution buys +7.2 pts
+   of recall but costs 22.7 pts of precision, and on F1 that trade loses.
+
+IMPLICATION: all the machinery built in this experiment (LD_PRELOAD fix, v1/v2
+prompt iteration, MCTS search itself) currently loses to just asking the model
+once, directly, on rust. Java is the only case where the added complexity pays
+for itself, and even there the edge over pure inference is thin (+1.0 F1 pt)
+for a large compute-cost increase (MCTS search vs one forward pass). Before
+calling Code-2 execution a win, this compute-cost-vs-gain tradeoff needs to be
+weighed explicitly, and the rust precision collapse (81.5%->76.9% baseline->v2,
+worse than pure inference's 99.6%) should be root-caused -- consistent with
+the standing hypothesis in section 3d about unnormalized stdout comparisons
+(trailing newline / float formatting) producing false "non-equivalent" reads.
+
+Also added this session, independent of the code2-exec thread: a GraphCodeBERT
+zero-shot baseline (GRAPHCODEBERT_CLCCD_BASELINE.md, uncommitted) -- calibrated
+cosine-similarity classifier on mean-pooled embeddings from the untouched
+microsoft/graphcodebert-base encoder. Every prompted LLM in the repo, including
+the smallest (Qwen3-4B), beats it on both languages (java F1 .88-.96 vs
+GraphCodeBERT .7257; rust F1 .48-.91 vs GraphCodeBERT .3731, its weakest
+showing by far). See that file for full method/caveats.
 
 
 4. THE LD_PRELOAD BUG (found + fixed 2026-09-08, uncommitted)
@@ -223,10 +331,18 @@ a) When 2656933 / 2656934 finish: score rust v3 vs v1/v2. This is the first real
 b) Commit the LD_PRELOAD fix + build_failed_dataset.py + prompts + configs.
 c) CONTROL RUN: same 65 samples under the generic _code2_exec config, to separate
    prompt effect from temperature=0.7 rerun variance.
-d) THE REAL TEST: full 1800 (java) + 1200 (rust) run with the fixed harness and
-   v2 prompts, scored with evaluate_clone_results.py defaults. That is the only
-   thing that includes negatives and therefore measures PRECISION. Everything so
-   far is diagnostics on a deliberately clone-skewed subset.
+d) DONE 2026-09-11, see section 3e -- THE REAL TEST: full 1800 (java) + 1200
+   (rust) run with the fixed harness and v2 prompts, scored with
+   evaluate_clone_results.py defaults. Result: net F1 win vs pre-code2-exec
+   MCTS baseline on both languages, but LOSES to plain pure inference on rust
+   (F1 .8189 vs .8893) and barely beats it on java (F1 .9595 vs .9492).
+e) NEXT: root-cause the rust precision collapse (81.5%->76.9% baseline->v2).
+   Leading hypothesis (section 3d): unnormalized stdout comparison (trailing
+   newline, float vs int formatting) makes the model read true clone pairs as
+   non-equivalent when Code 2 actually runs. Check compared outputs directly
+   on the rust v2 false positives before iterating on prompts further.
+f) Decide whether Code-2 execution is worth its compute cost at all, given
+   pure inference beats it outright on rust and only edges it out on java.
 
 KNOWN BUGS STILL UNFIXED
  * tree.py _code_execution(): when the model's own code raises, the outer handler
