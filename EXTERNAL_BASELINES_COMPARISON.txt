@@ -1,0 +1,358 @@
+================================================================================
+ rStar-XCCD -- External research comparison: cross-language code clone detection
+ Written 2026-09-12 19:46 EDT.  Project: /project/6104180/khajezad/rstar-xccd-remote
+================================================================================
+
+Context: asked to find published cross-language code clone detection research
+with a public repository, comparable to this project's CLCCD python-java /
+python-rust results, excluding anything authored by Mohamad Khajezade. This
+file records what was found, what was actually comparable, and whether their
+code could be run against our own test sets. Nothing in this file required a
+new model run -- see section 3 for what WOULD require one.
+
+
+1. REPOSITORIES FOUND AND EVALUATED
+--------------------------------------------------------------------------------
+Cloned to /project/6104180/khajezad/rstar-xccd-remote/ (one level outside
+rStar-XCCD, alongside the pre-existing CLCCD/ sibling directory):
+
+ - CLCCD/          github.com/TruX-DTF/CLCCD  -- see section 2. This is the
+   exact paper (Moumoula, M. B., Kaboré, A. K., Klein, J., & Bissyandé, T. F.,
+   "The Struggles of LLMs in Cross-Lingual Code Clone Detection," FSE 2025,
+   arXiv 2408.04430) that our own eval_data/test_python_{java,rust}_CLCCD.jsonl
+   are BUILT FROM -- see rstar-xccd/CLCCD_DATASET_CONSTRUCTION.md. Already
+   present before this session (it's the source of our own data); what's new
+   here is actually scoring its results/ directory. NOT authored by Khajezade.
+
+ - ZC3/            github.com/lairikeqiA/ZC3  -- "ZC3: Zero-Shot
+   Cross-Language Code Clone Detection" (arXiv 2308.13754). REJECTED as a
+   comparison target: no pretrained checkpoint or training data shipped
+   (README references /dataset/... paths not present in the repo), the task
+   is retrieval/MAP-scored (not clone/non-clone classification), and it has
+   no Rust support (Python-Java only, via AtCoder/XLCoST/CodeJam/CSNCC).
+   NOT authored by Khajezade.
+
+ - C4/             github.com/Chenning-Tao/C4  -- "C4: Contrastive
+   Cross-Language Code Clone Detection". Better fit than ZC3: ships real
+   training data via Git LFS (69k/8.6k/8.7k train/valid/test pairs) and its
+   own run_con.py does genuine threshold-swept precision/recall/F1
+   classification (confirmed by reading the code, not just the README).
+   Still rejected as a direct comparison target: no pretrained checkpoint
+   (needs training, ~10 epochs x 3xRTX3090 x ~60min/epoch per their own
+   README), and its data covers py/java/c/cpp/cs -- no Rust. NOT authored by
+   Khajezade.
+
+ - LLM_Code_Clone_Validation/   github.com/ZixianReid/LLM_Code_Clone_Validation
+   -- tied to Zixian Zhang (co-author of "Assessing the Code Clone Detection
+   Capability of Large Language Models," ICCQ 2024, arXiv 2407.02402). Uses
+   transformers/peft/trl for both LLM fine-tuning and zero-shot prompting.
+   Its own built-in datasets (BigCloneBench, OJClone, GPTCloneBench) are not
+   our language pairs, but data/prompt_template.py is a fully generic
+   code_1/code_2 template with no hardcoded language -- structurally capable
+   of being pointed at our own files. Not yet wired up to anything; kept as
+   a candidate if the CLCCD repo's own scripts (section 3) turn out to be
+   insufficient. NOT authored by Khajezade.
+
+REJECTED without cloning (repo not found, or paper had no repo at all):
+ - AdaCCD (AAAI 2024, arXiv 2311.07277) -- no public repo found after
+   targeted search (including site:github.com).
+ - "An Empirical Study of LLM-Based Code Clone Detection" (Zhu, Yoshida,
+   Choi, Matsubara, Takada; arXiv 2511.01176) -- already saved in
+   rstar-xccd/related-work-prompts/empirical_study_llm_clone_detection_
+   2511.01176.md for its prompts; confirmed NOT Khajezade-authored, but no
+   GitHub link on the arXiv abstract page and none found by search.
+ - EXCLUDED BY THE USER'S INSTRUCTION: github.com/mkhfring/llm-for-ccd, the
+   repo for "Investigating the Efficacy of Large Language Models for Code
+   Clone Detection" (arXiv 2401.13802) -- first author is Mohamad Khajezade.
+   Confirmed by fetching the arXiv author list before considering it further.
+
+
+2. THE REAL COMPARISON: CLCCD PAPER'S 5 LLMs vs. THIS PROJECT (java)
+--------------------------------------------------------------------------------
+CLCCD/results/{codenet,xlcost}/*.json already contain per-record model output
+(field "output", normalized yes/no) alongside ground truth ("type") and the
+language pair ("ll2") for every one of their 8 prompts x 5 models. No new
+inference was run -- these are their own published results, rescored here
+with the SAME confusion-matrix logic as the rest of this project.
+
+IMPORTANT: their java-python data is the same two source files
+(data/java_cn.json = CodeNet, data/java_xl.json = XLCoST) that
+CLCCD_DATASET_CONSTRUCTION.md pools to build our own
+eval_data/test_python_java_CLCCD.jsonl (300+300 CodeNet + 600+600 XLCoST =
+1800). Filtering their results to ll2=="Python" and pooling codenet+xlcost
+per prompt reproduces the exact same 1800-pair population ours does. This
+is a genuinely apples-to-apples comparison for java, not just a similar
+dataset.
+
+Best prompt per model (their own 8 prompts: sp1, sp2, sim, sl, reas, inte,
+se, sct -- see rstar-xccd/related-work-prompts/clccd_struggles_of_llms_
+2408.04430.md), n=1800, judged by F1:
+
+  Model                     Best prompt  F1      Precision  Recall  Resp.rate
+  GPT-3.5-Turbo             sp2          0.9239  0.9849     0.8700  100%
+  LLaMA2-7B-Chat            sp2          0.7668  0.7957     0.7400  100%
+  StarChat-beta             sp2          0.5578  0.5872     0.5311  99.94%
+  StarCoder2-15B-Instruct   sp2          0.5098  0.8733     0.3600  100%
+  Falcon-7B-Instruct        sp2          0.6368  0.5136     0.8376  99.94%
+
+Every model in THIS project beats every one of those 5, including our
+smallest (Qwen2.5-Coder-3B pure inference, F1 0.9457):
+
+  This project (java, F1, best of pure-inference / best MCTS)
+  Qwen3-8B pure inference            0.9559
+  Qwen2.5-Coder-7B best MCTS (v2)    0.9541
+  DeepSeek-Coder-7B-v1.5 pure inf.   0.9506
+  Qwen2.5-Coder-7B pure inference    0.9492
+  Qwen2.5-Coder-3B pure inference    0.9457
+  Qwen3-4B best MCTS                 0.9174
+  Qwen3-8B best MCTS (final-for-clccd) 0.8736
+
+For "Rust": their raw data only ever pairs Java with a second language --
+there is no Python-Rust record in data/java_cn.json, only Java-Rust. That is
+a DIFFERENT language pair from ours (our python-rust file exists only
+because of the CodeNet problem-id bridging trick in
+CLCCD_DATASET_CONSTRUCTION.md section 4, which discards the Java side
+entirely). Their Java-Rust numbers below are NOT comparable to our
+python-rust numbers -- included for context only, not as a baseline:
+
+  Model                     Best prompt  Java-Rust F1  (n=600, balanced 300/300)
+  GPT-3.5-Turbo             sp2          0.8401
+  LLaMA2-7B-Chat            sp1          0.6628
+  Falcon-7B-Instruct        sp1          0.6562
+  StarChat-beta             sp2          0.4439
+  StarCoder2-15B-Instruct   sp2          0.1709
+
+No genuine external python-rust baseline exists in anything found this
+session -- see section 3 for whether we could generate one ourselves using
+their code.
+
+
+2b. THE TEXT-EMBEDDING-3-LARGE BASELINE -- BEATS EVERYTHING IN THIS PROJECT
+--------------------------------------------------------------------------------
+CORRECTION to an assumption in section 1: the CLCCD paper's stated
+"GraphCodeBERT" and "UniXcoder" baselines are NOT reproduced anywhere in
+this repo (grepped for both names, only a coincidental substring hit in an
+unrelated SVG file) -- the paper appears to cite those two from other work
+rather than re-running them. The one non-LLM baseline this repo actually
+implements is OpenAI's `text-embedding-3-large` (get_embeddings.py) +
+classifier/classifier.py, an SVM/KNN on top of the frozen embeddings.
+
+Their own checked-in results (classifier/data/ada_java_{cn,xl}.txt) pool
+ALL language pairs together in one 80/20 split (SVM/KNN, F1 0.97-1.00) --
+not a python-specific number. But classifier/data/ada_java_{cn,xl}.json
+already contain the raw per-record embeddings AND a precomputed cosine
+similarity ("Result") with the ll2 label intact, so a python/rust-specific
+number can be pulled out directly, without re-calling the OpenAI API.
+
+Recomputed here with the SAME methodology as this project's own
+GRAPHCODEBERT_CLCCD_BASELINE.md (cosine-similarity threshold, calibrated on
+an 80% dev split, reported on the held-out 20% test split, no fine-tuning of
+the embedding model itself) -- pooling codenet+xlcost for Python (n=1800,
+same population as section 2's java comparison), codenet only for Rust
+(n=600, java-rust, same non-comparability caveat as section 2):
+
+  text-embedding-3-large + threshold        F1       Precision  Recall
+  ll2=Python (java-python, n=1800, test=360) 0.9728   0.9944     0.9521
+  ll2=Rust   (java-rust,  n=600,  test=120)  0.9219   0.9365     0.9077
+
+0.9728 on java-python beats every model in this entire project, including
+the best pure-inference (Qwen3-8B, 0.9559) and the best MCTS result
+(Qwen2.5-Coder-7B code2-exec v2, 0.9541) -- and by a wide margin beats this
+project's own from-scratch GraphCodeBERT-base baseline (java F1 0.7257,
+GRAPHCODEBERT_CLCCD_BASELINE.md).
+
+CORRECTION (2026-09-13): an earlier draft of this section attributed the
+gap over GraphCodeBERT-base to text-embedding-3-large being "a much larger,
+more capable embedding model." That is NOT a verified fact -- OpenAI has
+never publicly disclosed a parameter count for text-embedding-3-large (only
+that it outputs 3072-dim embeddings and is the larger of their two current
+embedding tiers). Checked via web search before writing this correction; no
+official or credibly-sourced parameter count exists. Do not restate the
+size claim as fact elsewhere without a real source.
+
+What can be stated without needing that unverified claim: a frozen,
+commercially-served text embedding plus a simple calibrated threshold is,
+on this exact 1800-row java-python population, a stronger clone detector
+than any prompted or searched LLM tried in this project so far -- this is
+the same population section 2 already scores every LLM on, so the
+comparison is apples-to-apples, not an artifact of a different test set.
+WHY it wins (model size, training data, embedding-vs-generative-prompting
+as a task formulation, or something else) is not something this project's
+data can actually distinguish, and should not be attributed to size without
+a source.
+
+
+3. CAN WE RUN THEIR CODE ON OUR TEST SETS? (checked, not yet done)
+--------------------------------------------------------------------------------
+Their inference functions (gpt_inf.py's sp_inference(), and the equivalent
+functions in llama2_inf.py / falcon_inf.py / starchat_inf.py /
+starcoder_inf.py) are LANGUAGE-AGNOSTIC: each just takes codeA, codeB, and a
+prompt/context string and calls the model. The sp1/sp2 prompts themselves
+say "regardless of the programming language." Nothing in the inference path
+is Java-specific -- only their driver scripts (sp.py etc.) hardcode which
+data/*.json file to read. This means their exact prompts and inference code
+COULD be pointed at our own test_python_rust_CLCCD.jsonl (after converting
+our {index, question, answer} schema back to their {codeA, codeB, type}
+schema, or just feeding it a small new driver script) to get a genuine,
+first-ever Python-Rust number for these 5 models -- something the original
+paper never computed, since their raw data has no such pairing.
+
+Checked, NOT yet run. Feasibility per model, on THIS cluster, as of
+2026-09-12:
+
+  Falcon-7B-Instruct (tiiuae/falcon-7b-instruct):
+    OPEN weights, standard transformers AutoModelForCausalLM load. No extra
+    packages needed (transformers 4.45.2 already in ../venv). NOT already
+    downloaded to rstar-xccd/models/ -- needs a fresh download (~14GB).
+    READY TO RUN once downloaded.
+
+  StarChat-beta (HuggingFaceH4/starchat-beta):
+    OPEN weights, standard transformers pipeline. Same status as Falcon --
+    not downloaded, needs fetching, otherwise ready.
+
+  StarCoder2-15B-Instruct (bigcode/starcoder2-15b-instruct-v0.1):
+    OPEN weights, standard transformers pipeline, but ~15B params (larger
+    GPU memory footprint than anything else run in this project so far --
+    Qwen2.5-Coder-7B needed ~36G at 0.90 utilization; 15B in bf16 will need
+    meaningfully more). Not downloaded. READY TO RUN, but budget a bigger
+    GPU allocation than the other four.
+
+  LLaMA-2-7b-chat-hf (meta-llama/Llama-2-7b-chat-hf):
+    GATED on HuggingFace -- requires a HF account with Meta's license
+    accepted AND an HF_TOKEN with access granted; neither HF_TOKEN nor
+    HUGGING_FACE_HUB_TOKEN is set in this environment. ALSO needs
+    `langchain` and `langchain_huggingface`, neither of which is installed
+    in ../venv (checked: ImportError for both; `transformers` and `openai`
+    ARE already installed). BLOCKED until a token + license acceptance is
+    provided, plus two pip installs.
+
+  GPT-3.5-Turbo (via OpenAI API):
+    `openai` package IS already installed (2.45.0), but OPENAI_API_KEY is
+    NOT set anywhere in this environment, and this is a paid, external API
+    (not a local job) -- every one of the 1200 rust pairs x however many
+    prompts is a real, metered cost outside this cluster's compute budget.
+    BLOCKED until an API key is provided; even then, this is a different
+    kind of resource commitment (money, not GPU-hours) than everything else
+    in this project.
+
+SUMMARY: 3 of 5 models (Falcon-7B-Instruct, StarChat-beta,
+StarCoder2-15B-Instruct) could be run on our python-rust file today with no
+new credentials -- just a model download and a small adapter script
+(reuse their sp_inference-equivalent function + sp1/sp2 prompt text
+verbatim, feed it our codeA=Python/codeB=Rust pairs, score with this
+project's own evaluate_clone_results.py-style confusion matrix). The other 2
+(LLaMA-2-7b-chat-hf, GPT-3.5-Turbo) need something from the user first: an
+HF token with Llama-2 license access (+ two pip installs), or an OpenAI API
+key, respectively.
+
+NOT YET DONE. This is a real, launchable next step if wanted, not merely
+theoretical -- but it is new inference work (3+ model downloads, adapter
+script, SLURM jobs) that hasn't been started.
+
+
+4. DONE 2026-09-12 23:59 EDT -- THE PAPER'S OWN PROMPTS, ON OUR OWN QWEN MODELS
+--------------------------------------------------------------------------------
+Ran the CLCCD paper's 6 single-call prompts (sp1 "Simple", sp2 "Improved
+Simple", sim "Similarity Score", reas "Reasoning", inte "Integrate", sl
+"Similar Lines" -- prompt text and message format copied verbatim from
+CLCCD/prompt.py and CLCCD/gpt_inf.py's sp_inference()) against this
+project's own 4 Qwen models, on this project's own test_python_{java,
+rust}_CLCCD.jsonl. NOT included: "se" and "sct", the paper's other 2
+prompts, both multi-stage pipelines -- left for later if wanted.
+
+Script: pure_inference/run_clccd_paper_prompts.py. codeA/codeB are
+recovered from our own templated "question" field by regex (0/3000
+extraction failures across both files) rather than needing new data.
+temperature=0.3, matching gpt_inf.py's inference() call exactly.
+max_tokens=768. Jobs: 2953941 (Qwen2.5-Coder-3B), 2953942 (Qwen2.5-Coder-7B),
+2953943 (Qwen3-4B), 2953944 (Qwen3-8B) -- all COMPLETED, 12-41 min each (a
+first submission of all 4, jobs 2951516-2951519, FAILED in ~5-8 min each on
+a path bug -- REPO_ROOT already points at rstar-xccd/, an extra
+"rstar-xccd" segment in the eval_data/model path doubled it into a
+nonexistent directory; fixed before any of the 4 reran). Output:
+eval_data/paper_prompt_replication/*.jsonl, one file per (model, dataset,
+prompt), each row carrying the raw generation AND the parsed label, so
+re-parsing never requires rerunning inference.
+
+4a. RESPONSE RATE -- THE REASONING PROMPTS HAVE A REAL, SEVERE GAP
+--------------------------------------------------------------------------------
+Response rate = judged / total (the intuitive sense, NOT the inverted
+"no-judgment/total" label used inside individual _result.txt files
+elsewhere in this project). Parsing: first standalone "yes"/"no" in the
+raw generation for sp1/sp2/reas/inte/sl; first number, thresholded at >=5,
+for sim.
+
+Direct-answer prompts (sp1, sp2, sim) essentially never fail to parse:
+
+  prompt   response rate range across all 4 models x 2 datasets
+  sp1      0.9994 -- 1.0000
+  sp2      1.0000 always
+  sim      0.9983 -- 1.0000
+
+Reasoning-first prompts (reas, inte, sl -- each asks the model to reason
+BEFORE concluding) fail to parse far more often, and the gap is severe in
+the worst cases:
+
+  prompt   response rate range across all 4 models x 2 datasets
+  reas     0.4733 -- 1.0000
+  inte     0.5517 -- 0.9822
+  sl       0.3150 -- 0.9808
+
+Worst case: Qwen2.5-Coder-3B, rust, prompt "sl" -- response rate 0.3150,
+i.e. 822 of 1200 samples got NO judgment at all. Second-worst: Qwen2.5-
+Coder-7B, rust, prompt "reas" -- response rate 0.4733 (632/1200 no-
+judgment). This pattern holds across every model tested: asking for
+reasoning before a verdict trades away a large chunk of parseable answers,
+consistent with max_tokens=768 cutting the response off before it reaches
+a stated "yes"/"no" on the more verbose reasoning path. Direct-answer
+prompts never show this failure mode.
+
+Related but NOT separately measured: on the samples that DO get judged
+under reas/inte/sl, recall is often lower than under sp1/sp2 for the same
+model -- consistent with (not proven by) a second, distinct risk in the
+parser: it takes the FIRST "yes"/"no" anywhere in the response, and
+reasoning text that explores "is this a simple yes or no" before its real
+conclusion can get mis-parsed from a mid-reasoning word rather than the
+model's actual verdict. Raw generations are preserved in the output files
+specifically so this could be re-parsed later without rerunning inference,
+but that has NOT been done -- this paragraph is a flagged risk, not a
+measured one.
+
+4b. F1 SCORES -- best of the 6 prompts per model, vs. this project's own
+    pure-inference and best-MCTS numbers, and the paper's own 5 LLMs
+--------------------------------------------------------------------------------
+  PYTHON-JAVA (n=1800)
+  Model                    best paper-prompt F1  (prompt)  |  our pure-inf F1  |  our best-MCTS F1
+  Qwen2.5-Coder-3B                0.8462          (sp2)    |      0.9457       |      0.9206
+  Qwen2.5-Coder-7B                0.8903          (sp2)    |      0.9492       |      0.9541
+  Qwen3-4B                        0.8535          (sp2)    |      0.8767       |      0.9174
+  Qwen3-8B                        0.9071          (sp2)    |      0.9559       |      0.8736
+  (for reference, section 2's best of the paper's own 5 LLMs: GPT-3.5-Turbo 0.9239)
+
+  PYTHON-RUST (n=1200)
+  Model                    best paper-prompt F1  (prompt)  |  our pure-inf F1  |  our best-MCTS F1
+  Qwen2.5-Coder-3B                0.3874          (sl)     |      0.6255       |      0.6730
+  Qwen2.5-Coder-7B                0.6119          (sl)     |      0.8893       |      0.8259
+  Qwen3-4B                        0.6813          (sp2)    |      0.4806       |      0.8056
+  Qwen3-8B                        0.6985          (sp2)    |      0.9088       |  0.7670 (incomplete run, 60%)
+  (no python-rust number exists in the paper itself -- its raw data never pairs
+   python with rust directly; see section 2's java-rust caveat)
+
+READING THIS: the paper's own zero-shot prompts, with no few-shot examples,
+underperform BOTH this project's pure-inference (which uses 2 few-shot
+examples via few_shot_imprvoed.json) and this project's best MCTS result in
+7 of 8 (model, dataset) combinations -- the one exception is Qwen3-4B on
+rust, where the paper-prompt best (0.6813) beats our pure-inference
+(0.4806) but still loses to our best MCTS (0.8056). Consistent with an
+unsurprising, simple explanation: few-shot examples help, and every
+approach in this project other than the paper-prompt replication uses at
+least 2 of them. sp1/sp2 also show a consistent shape across every model:
+near-perfect precision (frequently 1.0000) paired with much weaker recall
+-- these models rarely say "clone" under the paper's exact zero-shot
+wording, i.e. they under-call clone rather than over-calling it.
+
+Full per-prompt breakdown (all 48 model x dataset x prompt combinations) is
+in eval_data/paper_prompt_replication/*.jsonl; rerun
+pure_inference/score_clccd_paper_prompts.py (run from rstar-xccd/) to
+reproduce or slice this differently.
+================================================================================

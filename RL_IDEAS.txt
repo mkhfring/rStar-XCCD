@@ -1,0 +1,197 @@
+================================================================================
+ rStar-XCCD -- Ideas for using search rollouts / failed samples for RL
+ Written 2026-09-12 01:34 EDT.  Project: /project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD
+================================================================================
+
+Context: asked "how practical is it to use the failed samples for a
+reinforcement learning approach", after this session's rust code2-exec fix
+work produced several curated failed-sample sets (build_failed_dataset.py
+outputs, see RESUME_HERE.txt section 3f for the most recent one). This file
+is the answer, expanded into concrete next steps. Nothing here has been
+implemented -- this is a plan, not a status update. Cross-reference
+RESUME_HERE.txt for the live experiment status.
+
+
+1. WHY THIS TASK FITS RL/SELF-IMPROVEMENT UNUSUALLY WELL
+--------------------------------------------------------------------------------
+Clone detection on CLCCD has a VERIFIABLE reward: ground truth (clone /
+non-clone) is known for every training question, so "did the final answer
+match ground truth" is a clean 0/1 reward with no reward model needed. This
+is the same regime as RLVR (RL with verifiable rewards) / rStar-Math's own
+training loop -- and the infrastructure already half-exists here:
+
+ - The MCTS search (rstar_deepthink/agents/mcts.py) already produces many
+   scored leaf trajectories per question when is_sampling=True (temperature
+   0.7, best_of=2, n_generate_sample=2, iterations=2) -- these are rollouts,
+   not just an inference pass.
+ - Every node already carries value / q_value / visit_count fields, and
+   update_recursive() already backs up rewards through the tree. This is
+   the same shape of data a self-improvement training loop consumes.
+ - evaluate_clone_results.py's predict_label() is a ready-made, already-
+   validated reward function: given a finished tree and ground truth, it
+   says whether the search's answer was right. (As of 2026-09-12 it no
+   longer has the exec-signature-override bug -- see RESUME_HERE.txt
+   section 3f -- so it's safe to use as a training signal now, whereas the
+   pre-fix version would have rewarded/penalized some trajectories for the
+   wrong reason.)
+ - build_failed_dataset.py already produces exactly the "hard negative"
+   question sets (by index, with provenance of how/why each failed) that a
+   rejection-sampling or curriculum approach would want to oversample.
+
+None of this is a training loop yet -- there is currently NO fine-tuning
+code in this repo, only inference/search. But the pieces needed to build
+one are unusually close at hand compared to starting from scratch.
+
+
+2. OPTIONS, ROUGHLY IN ORDER OF PRACTICALITY (cheapest/lowest-risk first)
+--------------------------------------------------------------------------------
+
+OPTION A -- Rejection-sampling fine-tuning (STaR / ReST-style). RECOMMENDED
+FIRST STEP.
+  Idea: for each question (weighted toward the failed-sample sets, see
+  section 3), crank up sampling (higher temperature, higher best_of /
+  n_generate_sample / iterations than the eval configs use) to mine MANY
+  candidate rollouts. Keep only the leaves whose final_answer matches
+  ground truth AND whose reasoning is genuinely execution-backed (not the
+  fabricated-output pattern found and fixed in mcts.py this session -- a
+  trace that "won" only because of a hallucinated <output> block is not a
+  trace worth training on, even if predict_label happens to score it
+  right). Fine-tune (plain SFT loss) the policy model on those curated
+  correct traces.
+  Why this first: no new training infrastructure beyond a standard SFT
+  loop (trl/axolotl/whatever is already on this cluster) -- the expensive
+  part (generating and executing candidate rollouts) reuses main.py's
+  existing MCTS + code2-exec machinery unchanged. This is a data-curation
+  problem layered on top of what already runs today, not a new RL
+  algorithm.
+  Cost driver: each rollout is a real vLLM generation AND, for code2-exec
+  questions, a real compile+run subprocess (javac/rustc, not just a
+  forward pass) -- mining N rollouts per question costs roughly N times a
+  single eval pass per question, and N needs to be large-ish for hard
+  questions (by definition, the failed-sample set rarely reaches a correct
+  answer at the sampling budget already tried, so recovering even one
+  correct trace per hard question may need substantially higher N than for
+  an easy question).
+
+OPTION B -- DPO-style pairwise preference training.
+  Idea: for questions where the search ALREADY produces both a correct and
+  an incorrect leaf in the same tree (the "leaves disagree" case --
+  evaluate_clone_results.py's clone-on-disagreement aggregation already
+  detects this), construct (chosen=correct trajectory, rejected=incorrect
+  trajectory) pairs directly from existing or lightly-resampled trees, and
+  run DPO.
+  Why this is attractive: needs no reward model and less rollout volume
+  than Option A per question (a single tree that already disagrees gives a
+  pair for free), and preference data is exactly what DPO wants.
+  Limitation: many hard-failed questions currently produce ZERO correct
+  leaves at the sampling budget tried (that is what makes them "failed"),
+  so there is no "chosen" trace to pair -- Option B only covers the subset
+  of failures that are borderline (sometimes right), not the ones that are
+  consistently wrong. Would need to be combined with Option A's higher-N
+  resampling to first surface a correct trace before a pair can be built.
+
+OPTION C -- Full online RL (GRPO / PPO), reward = predict_label(tree) ==
+ground_truth.
+  Idea: treat the whole MCTS rollout as the RL rollout, use the verifiable
+  reward directly, and update the policy online (closer to what rStar-Math
+  itself, or DeepSeek-R1-style training, actually does).
+  Why this is NOT the first step: this repo has no training loop at all
+  today -- would mean standing up a new training stack (something like
+  verl/OpenRLHF/trl's GRPOTrainer) integrated with vLLM generation AND the
+  code2-exec subprocess tool-calling, which is a materially bigger
+  engineering lift than anything done in this whole experiment so far.
+  Also the most compute-hungry option: online RL needs many rollouts PER
+  GRADIENT STEP, repeated over many steps, each rollout potentially
+  including a real compile+run -- multiply today's single-eval-pass GPU-
+  hours by a large factor.
+  Worth revisiting once Option A/B have shown the approach helps at all,
+  not as the first thing to try.
+
+
+3. HOW TO ACTUALLY USE THE "FAILED SAMPLES" -- MIX, DON'T ISOLATE
+--------------------------------------------------------------------------------
+Whichever option above is picked, do NOT train only on the failed-sample
+sets (e.g. eval_data/failed_rust_v2_or_v3fix_CLCCD.jsonl, 163 questions, or
+any future build_failed_dataset.py output). Concretely:
+
+ - Failed-sample sets are small (double-digit to low-triple-digit question
+   counts) and systematically skewed -- they are disproportionately the
+   HARD end of an already imbalanced distribution (CLCCD python-rust is
+   300 clone / 900 non-clone; the retry sets skew further still, see
+   RESUME_HERE.txt section 1's "98% ground-truth clone" caveat on the
+   original FN-only retry sets). Training exclusively on them risks
+   narrow overfitting to whatever surface pattern makes these specific
+   questions hard, not a general reasoning improvement.
+ - Better: take the FULL training pool (not the held-out CLCCD test split
+   used for every F1 number in RESUME_HERE.txt -- see the leakage warning
+   in section 4) and oversample/upweight the indices that appear in the
+   failed-sample sets, the way hard-example mining normally works. The
+   failed-sample sets are valuable as a WEIGHTING signal and as a fast,
+   cheap way to check "did this fix move the needle on exactly the cases
+   we know are hard" (which is what this session's retry-set tests already
+   did, informally) -- not as the entire diet.
+ - The provenance sidecar files (e.g. *_CLCCD.jsonl_provenance) already
+   record WHICH failure kind (false_positive / false_negative /
+   no_judgment) and which run(s) produced it per question -- useful for
+   stratifying: e.g. weight false-positive-prone questions differently
+   from false-negative-prone ones, since section 3f's diagnosis shows they
+   have different root causes (weak self-generated tests vs. scoring/
+   harness bugs vs. genuinely hard signature-level cases).
+
+
+4. METHODOLOGICAL CAUTIONS -- READ BEFORE STARTING ANY OF THIS
+--------------------------------------------------------------------------------
+ - TRAIN/TEST LEAKAGE. Every failed-sample set built so far (build_failed_
+   dataset.py) is drawn from eval_data/test_python_{java,rust}_CLCCD.jsonl
+   -- the SAME split every F1 number in RESUME_HERE.txt is computed on.
+   Fine-tuning on these questions (or on rollouts generated FROM these
+   questions) and then continuing to report F1 on that same file
+   invalidates every comparison made this session and would need to be
+   redone on a genuinely held-out split. This is the single most important
+   thing to get right before any of the above starts -- decide the
+   train/dev/test split FIRST, in writing, before generating a single
+   training rollout.
+ - THE HALLUCINATED-OUTPUT BUG IS DIRECTLY RELEVANT HERE, NOT JUST TO
+   SCORING. Section 3f's mcts.py fix (2026-09-12) stops the search from
+   silently dropping a truncated step's real observation, which is what let
+   later steps fabricate plausible-looking <output> blocks. Any rollout
+   mining for Option A/B run BEFORE that fix (i.e. anything generated
+   against pre-2026-09-12 mcts.py) may contain reward-matching trajectories
+   that "got the right answer" via a hallucinated match rather than a real
+   one -- exactly the kind of trace that should NOT be reinforced. Mine
+   rollouts only with the fixed harness.
+ - COMPUTE BUDGET REALITY CHECK. This session's single eval passes over
+   the 1200/1800-question test sets took ~5h (2 GPUs) to ~40min (1 GPU, on
+   a small retry subset), and jobs routinely queued for 1-2h before
+   starting even at that scale. Any of the options above multiplies the
+   number of rollouts needed well beyond a single eval pass. Before
+   committing to Option A, do a small pilot (e.g. the existing 118- or
+   163-sample retry sets, not the full 1200/1800) to measure rollouts-per-
+   recovered-question empirically, and extrapolate the real cost before
+   scaling up.
+ - LABEL QUALITY OF MINED TRACES. predict_label()'s correctness alone is
+   not sufficient quality-control for a trace to be worth training on
+   (see the hallucination point above). At minimum, filter mined traces to
+   require a real exec_outcome ("ran", not None/no_code/blocked) on the
+   leaf that produced the winning vote, not just a matching final_answer.
+
+
+5. SUGGESTED MINIMAL PILOT (if this is picked up next)
+--------------------------------------------------------------------------------
+ a) Fix the train/test split question first (section 4) -- do not proceed
+    without this decided.
+ b) Take one of the existing small retry sets (e.g. eval_data/
+    failed_rust_v2_or_v3fix_CLCCD.jsonl, 163 questions, or a fresh one
+    built the same way once job 2910445's full run lands) as a translation-
+    only PILOT for Option A: raise temperature/best_of/iterations, mine
+    N=8-16 rollouts per question with the CURRENT (fixed) harness, count
+    how many questions ever produce a correct, genuinely-executed leaf at
+    that budget, and what N was actually needed. This single number
+    (rollouts-per-recovery) is the key input to deciding whether Option A
+    is affordable at the scale of the full training pool.
+ c) Only after (b) gives an affordable number, curate a real SFT set (full
+    pool + oversampled hards, per section 3) and fine-tune.
+ d) Re-evaluate on the held-out split from (a), and compare against every
+    baseline already in RESUME_HERE.txt (pre-code2-exec MCTS, code2-exec
+    v2/v3, pure inference) using the SAME evaluate_clone_results.py.
+================================================================================
