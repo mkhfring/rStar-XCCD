@@ -193,13 +193,6 @@ def predict_label(rstar_tree, aggregation=CLONE_ON_DISAGREEMENT,
     if unknown:
         raise ValueError(f"Unknown exec_signature trigger(s) {sorted(unknown)}; "
                          f"expected a subset of {EXEC_SIGNATURE_TRIGGERS}")
-    # Deliberately checked before the leaves are read, so a tree that never
-    # reached a parsable verdict still gets classified rather than counted
-    # as a non-response. That is a strict gain: it only ever converts a
-    # no-judgment instance, never overrides a judged one differently than it
-    # would have below.
-    if exec_signature and (tree_exec_outcomes(rstar_tree) & set(exec_signature)):
-        return "clone"
     numeric_nodes = [(tag, node) for tag, node in rstar_tree.items() if node_sort_key(tag) is not None]
     votes = []
     for tag, node in sorted(numeric_nodes, key=lambda kv: node_sort_key(kv[0])):
@@ -210,6 +203,22 @@ def predict_label(rstar_tree, aggregation=CLONE_ON_DISAGREEMENT,
         if label is not None:
             votes.append(label)
     if not votes:
+        # Only fires as a fallback for a tree that never reached a parsable
+        # verdict, per the justification above -- it converts a no-judgment
+        # instance rather than overriding a judged one. This is checked only
+        # here (after votes are known to be empty), not unconditionally
+        # before the leaves are read: on the code2-exec-rust-testfix-v1-full
+        # run, 196/980 trees triggered the signature and 194 of those ALSO
+        # had real leaf votes (only 2 were true no-judgment cases), so
+        # checking it first -- as this function did before 2026-09-12 --
+        # forced "clone" over a real, often-unanimous-and-correct leaf
+        # verdict in the overwhelming majority of firings, on both that run
+        # and the earlier code2-exec-lang-fewshot-v2 run (150/192 forced
+        # firings correct vs 157/192 the leaf votes alone would have gotten
+        # right). Moving the check here restores the invariant the original
+        # comment claimed but the unconditional-return code did not enforce.
+        if exec_signature and (tree_exec_outcomes(rstar_tree) & set(exec_signature)):
+            return "clone"
         return None
     if aggregation == CLONE_ON_DISAGREEMENT and "clone" in votes:
         return "clone"

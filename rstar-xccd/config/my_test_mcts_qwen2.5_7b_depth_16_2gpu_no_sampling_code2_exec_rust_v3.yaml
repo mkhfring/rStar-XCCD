@@ -1,0 +1,53 @@
+# 2-GPU (tensor-parallel) full-dataset variant of
+# my_test_mcts_qwen2.5_7b_depth_16_1gpu_no_sampling_code2_exec_rust_v3.yaml.
+# Only tp differs -- see the v2 2gpu config for why full-dataset runs use 2
+# GPUs while the retry experiments used 1.
+#
+# few_shot_code2_exec_python_rust_v3.json / mcts_prompt_code2_exec_python_rust_v3.json:
+# see that config's header for the fix this tests (>=3 structurally
+# different test inputs required before accepting an execution match as
+# clone evidence, plus a worked example where a single-digit match is a
+# coincidence and a multi-digit test reveals the real bug). On the 118-
+# sample failed_rust_v2_CLCCD.jsonl retry set (everything the full-dataset
+# v2 run got wrong) this recovered 55/78 false positives and 20/37 false
+# negatives -- 78/118 (66%) now correct, against 0/118 by construction.
+# This config runs that same fix on the full 1200-question set to get a
+# verified (not spliced) precision/recall number. See RESUME_HERE.txt.
+#
+# is_sampling: False -- the search must never see the ground-truth label.
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_code2_exec_python_rust_v3.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt_code2_exec_python_rust_v3.json"
+
+swap_space: 8
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 2
+best_of: 2
+is_sampling: False
+iterations: 2
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 3
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 2

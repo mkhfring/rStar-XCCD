@@ -1,0 +1,61 @@
+# v3 of the rust code2-exec config: same harness/decoding params as
+# ..._code2_exec_rust_v2.yaml, but swaps in few_shot_code2_exec_python_rust_v3.json
+# / mcts_prompt_code2_exec_python_rust_v3.json.
+#
+# Motivation (2026-09-11): scoring the v2 full-dataset rust run showed the
+# regression vs pure inference (F1 .8189 vs .8893) is driven by 24 NEW false
+# positives from real leaf votes (12 -> 36), not by the exec-signature
+# override (41 -> 42, flat). Inspecting the actual rollouts (idx 24/27/28)
+# showed the model settling for 1-2 small, round, self-picked test inputs
+# that coincidentally matched between two genuinely different
+# implementations, then declaring clone -- while a sibling leaf that read
+# the code without executing anything got it right. The v2 few-shot's own
+# worked example (sum of multiples of 3/5) modeled exactly this: two small
+# round test inputs ("10", "100") and done.
+#
+# v3's prompt (rule 13/14) requires >=3 structurally different test inputs
+# (a boundary/degenerate case, a small case, a larger/different-shaped case)
+# before accepting a match as clone evidence, and the few-shot now includes
+# a third worked example where a single-digit test matches by coincidence
+# but a multi-digit test exposes a real off-by-one bug -- teaching the
+# search not to stop at the first match. num_few_shot is 3 (not 2) so that
+# example is always included, not sampled out.
+#
+# Everything else is identical to v2; see that file's header for the rest
+# of the harness rationale (javac/rustc via stage_code2(), etc).
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_code2_exec_python_rust_v3.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt_code2_exec_python_rust_v3.json"
+
+swap_space: 8
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 2
+best_of: 2
+is_sampling: False
+iterations: 2
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 3
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 1

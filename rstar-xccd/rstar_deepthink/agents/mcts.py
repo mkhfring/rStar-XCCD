@@ -18,7 +18,7 @@ from rstar_deepthink.constants import (
 )
 from .tree import BaseTree, code_execution, collect_action_inputs, extract_program
 from .beam_search import BS
-from evaluate_clone_results import normalize_label
+from evaluate_clone_results import normalize_label, NO_CODE_MESSAGE
 
 # Matches an `assert` statement in generated code, used to decide whether a
 # python_interpreter step made an equivalence claim worth checking for
@@ -121,13 +121,29 @@ class MCTS(BS):
             new_node.state["action"] = parser_result["action"]
             new_node.state["action_input"] = parser_result["action_input"]
             new_node.state["observation"] = observation
-            if CODE_END in parser_result["action_input"]:
-                observation = self.obs_wrap(observation)
-                new_node.state["text"] = f"{step_result}{self.config.step_delim}{observation}"
-            else:
-                new_node.state["text"] = step_result
-                
-            code_ran_ok = "error" not in observation.lower()
+            # Always surface the observation, even when this step's code
+            # block got cut off before CODE_END (e.g. truncated by
+            # max_tokens while writing several test cases in one step).
+            # code_execution() still runs whatever fragment it got and
+            # returns a real result either way; previously that result was
+            # silently dropped here (state["text"] = step_result alone) when
+            # the block wasn't closed, leaving the model with no idea
+            # whether its code ran. The next step then continued blind and,
+            # in practice, fabricated a plausible-looking <output> block
+            # instead -- confirmed on the code2-exec-rust-testfix-v1-full
+            # run (job 2899116, 2026-09-11): sibling leaves sampled from the
+            # same unexecuted continuation produced different, mutually
+            # contradictory "observed" outputs for the same claimed test.
+            observation_wrapped = self.obs_wrap(observation)
+            new_node.state["text"] = f"{step_result}{self.config.step_delim}{observation_wrapped}"
+
+            # "No valid Python code found in the response." does not contain
+            # the word "error", so it previously fell through as
+            # code_ran_ok=True -- a truncated/unparsable step was silently
+            # treated as having succeeded, never counted toward
+            # errors_threshold, and the search kept extending the same
+            # blind branch instead of ever cutting it off.
+            code_ran_ok = "error" not in observation.lower() and observation != NO_CODE_MESSAGE
             is_assertion_error = observation.startswith("AssertionError")
             # A completed self-check (assertion held or failed) is not a
             # code defect -- don't count it toward errors_threshold. Only a

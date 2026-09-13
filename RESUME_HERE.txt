@@ -1,7 +1,7 @@
 ================================================================================
  rStar-XCCD -- Code-2 execution experiment: status handoff
  Written 2026-09-08 ~03:58 EDT.  Project: /project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD
- LAST UPDATED: 2026-09-11 17:52 EDT (section 3e below is the newest content --
+ LAST UPDATED: 2026-09-12 00:38 EDT (section 3f below is the newest content --
  search for "LAST UPDATED" to jump straight to it in a new session).
 ================================================================================
 
@@ -255,6 +255,118 @@ GraphCodeBERT .7257; rust F1 .48-.91 vs GraphCodeBERT .3731, its weakest
 showing by far). See that file for full method/caveats.
 
 
+3f. UPDATE 2026-09-12 00:38 EDT -- RUST v3 PROMPT FIX, ITS FULL-RUN REGRESSION,
+    AND TWO ROOT-CAUSE BUGS FOUND + FIXED (scoring + harness)
+--------------------------------------------------------------------------------
+Starting point: section 3e's rust precision problem (item 7e). Diagnosis of
+individual v2 rust false positives (idx 24/27/28 of the retry set) found the
+model settling for 1-2 small, round, self-picked test inputs that happened to
+match between two genuinely DIFFERENT implementations, then wrongly declaring
+clone -- while a sibling leaf that just read the code (no execution) got it
+right. Root cause looked like: weak/narrow self-generated tests.
+
+FIX ATTEMPT 1 (prompt-only, branch code2-exec-rust-testfix-v1):
+New few_shot_code2_exec_python_rust_v3.json / mcts_prompt_code2_exec_python_
+rust_v3.json. Added rule 13/14: require >=3 structurally different test
+inputs (boundary/degenerate, small, larger-or-differently-shaped) before
+trusting an execution match as clone evidence. New 3rd few-shot example: a
+single-digit test matches by coincidence, a multi-digit test exposes a real
+off-by-one bug -- verified for real (compiled + ran both snippets, got 0/0
+then 25/9) before use. num_few_shot bumped 2->3 so the new example is never
+sampled out.
+
+RETRY-SET RESULT (job 2895234, 118-sample failed_rust_v2_CLCCD.jsonl = every
+sample the full v2 rust run got wrong): 78/118 (66%) now correct. Broken down
+by original failure kind: FP 55/78 recovered, FN 20/37 recovered, no-judgment
+3/3 resolved. Looked like a clear win -- splicing this into the untouched
+1082 v2-correct samples projected F1 .9340, beating pure inference (.8893).
+
+FULL-DATASET RESULT (job 2899116, all 1200 rust questions, CANCELLED at
+980/1200 by explicit request once the pattern below was confirmed): the
+splice projection was WRONG. On the same 980 indices, v2 scored F1 .8083,
+v3-fix scored F1 .7707 -- WORSE, not better. Diffing predictions index-by-
+index: 65 regressions (v2 correct -> v3 wrong) vs only 49 recoveries in the
+first 699 rows, widening to 91 regressions vs 65 recoveries by 910 rows. The
+retry-only test structurally could not see this, since it excluded every
+sample v2 already got right by definition -- exactly the caveat flagged when
+the splice projection was first given.
+
+ROOT CAUSE, TRACED TWO LAYERS DEEP (both are real bugs, both now fixed):
+
+(1) SCORING BUG in evaluate_clone_results.py predict_label(). The
+    exec-signature override (forces "clone" whenever no_code/blocked/
+    assertion_failed appears anywhere in the tree) was checked BEFORE
+    reading leaf votes, and returned unconditionally -- overriding a real,
+    often-unanimous, often-correct leaf verdict, not just filling in a
+    no-judgment gap as its own comment claimed. Measured: on v2, 191/192
+    override firings had real leaf votes behind them anyway (only 1 was
+    genuinely no-judgment), and leaf-votes-alone would have scored 81.8% vs
+    the override's 78.1% on exactly those trees -- the override was already
+    net-negative on v2, not just on v3. On v3 it got much worse (81.6% vs
+    64.8%) because v3's own >=3-diverse-inputs rule raises the no_code rate
+    (14.7%->20.0% on the same 980 rows), firing the override more often.
+    FIX: moved the check to only apply when votes is empty (restores the
+    invariant the original comment described). Verified: v2 full-dataset F1
+    0.8189->0.8243 (also improves the ALREADY-PUBLISHED section-3e numbers).
+    v3-fix on the 980 covered rows: F1 0.7692->0.8154, nearly erasing the
+    apparent regression on its own.
+
+(2) HARNESS BUG in rstar_deepthink/agents/mcts.py create_child(). When a
+    code step is cut off before its closing <end_of_code> tag (more likely
+    under v3, which asks for longer, multi-input test blocks), the harness
+    DOES execute the truncated fragment and gets a real observation -- but
+    only appends it to state["text"] (so the model can see it) when
+    CODE_END is present. When it isn't, the observation is silently
+    dropped, the model has no idea whether its code ran, and there is no
+    penalty either: "No valid Python code found in the response." does not
+    contain the word "error", so code_ran_ok was True and
+    consecutive_errors never incremented. PROVEN, not just inferred: at
+    idx 90 of job 2899116, node 0.2.1.1 has no observation and no
+    exec_outcome (a dropped truncated step), and its two SIBLING children
+    (same never-executed continuation, sampled twice) independently
+    fabricated two different, mutually contradictory "<output>" blocks with
+    made-up numbers -- one claiming a match (wrong, truth is non-clone),
+    one claiming a mismatch (right). A real harness observation would be
+    identical across siblings; these weren't, so they were invented.
+    FIX: create_child() now always appends the (wrapped) observation to
+    state["text"], and code_ran_ok now also treats NO_CODE_MESSAGE as a
+    failure, so it counts toward errors_threshold like any other crash.
+    This is a repo-wide change (affects every PoT config, not just this
+    experiment) -- has NOT yet been validated on anything but the rust
+    combined retry set below; watch for side effects on unrelated configs.
+
+COMBINED RETRY SET (build_failed_dataset.py, v2=code2-exec-lang-fewshot-v2
+--run v3fix=code2-exec-rust-testfix-v1-full --mode union, both scored with
+the NOW-FIXED predict_label): eval_data/failed_rust_v2_or_v3fix_CLCCD.jsonl,
+163 samples (92 from v2, 98 from v3fix, overlapping/deduped) over the 980
+rows v3fix reached. 0/163 correct by construction -- this is the target for
+any future rust fix: it must recover BOTH failure populations at once.
+
+TEST LAUNCHED (job 2909014, branch code2-exec-rust-mcts-obsfix-v1): v3
+prompt + BOTH fixes above, on the 163-sample combined set, 1 GPU,
+def-khajezad_gpu, 2:30:00 budget. Not yet scored as of this writing -- see
+squeue/sacct for 2909014, then score with predict_label same as always.
+Question this answers: does fixing the harness's observation-visibility bug
+(not just the prompt) resolve both failure populations without
+reintroducing the other's?
+
+SIDE ANOMALIES NOTED, NOT YET INVESTIGATED:
+ * Job 2902249 (Qwen2.5-Coder-3B, rust, v3 prompt, full 1200) is still
+   running but loaded mcts.py BEFORE the observation-visibility fix (already
+   running when the fix landed) -- its result is "v3 prompt without the
+   harness fix, on 3B", not a test of today's fix. Treat accordingly when it
+   finishes; don't conflate it with 7B's numbers.
+ * Job 2904259 (Qwen2.5-Coder-3B, java, code2-exec-lang-fewshot-v2, full
+   1800) reports SLURM state COMPLETED, exit 0:0, only 2h10m of a 24h
+   budget -- but the output file has only 623/1800 rows and NO closing
+   footer line (main.py's own end-of-run write). This means the process
+   was interrupted mid-loop without a Python traceback in either log, which
+   is not consistent with a normal exit path in main.py (its only exit-side
+   effect is a footer write at the very end). Do not treat the partial
+   numbers (n=623: P=.9897 R=.8913 F1=.9379) as a real result -- rerun this
+   job before drawing any conclusion about 3B java.
+
+
 4. THE LD_PRELOAD BUG (found + fixed 2026-09-08, uncommitted)
 --------------------------------------------------------------------------------
 The slurm scripts export LD_PRELOAD=libnccl.so.2 for vLLM. rustc inherits it when
@@ -336,13 +448,31 @@ d) DONE 2026-09-11, see section 3e -- THE REAL TEST: full 1800 (java) + 1200
    evaluate_clone_results.py defaults. Result: net F1 win vs pre-code2-exec
    MCTS baseline on both languages, but LOSES to plain pure inference on rust
    (F1 .8189 vs .8893) and barely beats it on java (F1 .9595 vs .9492).
-e) NEXT: root-cause the rust precision collapse (81.5%->76.9% baseline->v2).
-   Leading hypothesis (section 3d): unnormalized stdout comparison (trailing
-   newline, float vs int formatting) makes the model read true clone pairs as
-   non-equivalent when Code 2 actually runs. Check compared outputs directly
-   on the rust v2 false positives before iterating on prompts further.
-f) Decide whether Code-2 execution is worth its compute cost at all, given
-   pure inference beats it outright on rust and only edges it out on java.
+e) DONE 2026-09-12, see section 3f -- root-caused the rust precision problem.
+   NOT the section-3d hypothesis (unnormalized stdout): the real drivers were
+   (1) a scoring bug where the exec-signature override clobbered real,
+   correct leaf votes, and (2) a harness bug where a truncated code step's
+   real observation was silently dropped, leaving the model to fabricate
+   plausible-looking output in the next step. Both fixed (evaluate_clone_
+   results.py and mcts.py). The section-3d hypothesis was never directly
+   tested (no one has yet diffed actual stdout strings byte-for-byte on a
+   clone pair) and remains open, but is no longer the leading explanation.
+g) PENDING: score job 2909014 (v3 prompt + both fixes, 163-sample combined
+   retry set spanning v2's AND v3's failures). If it clears most of the 163
+   without regressing, run the fixed harness on the full 1200 rust set to
+   get a real (not spliced) number, then redo java too since the harness fix
+   is repo-wide and could shift those numbers as well.
+h) PENDING: rerun job 2904259 (3B java) -- it stopped at 623/1800 with no
+   error and no footer; not a trustworthy result as-is.
+i) PENDING: once 2902249 (3B rust, old harness) finishes, treat it as
+   "v3 prompt alone" data for 3B, then rerun 3B rust with the harness fix
+   for a real comparison, mirroring whatever job 2909014 (7B) decides.
+j) Decide whether Code-2 execution is worth its compute cost at all --
+   still open, and now confounded by the two bugs above: every prior
+   pure-inference-vs-code2-exec comparison (section 3e) used the OLD,
+   buggy scorer and, for rust, the OLD harness. Worth re-checking those
+   comparisons under the fixed scorer at minimum (free, no rerun needed)
+   before relying on them.
 
 KNOWN BUGS STILL UNFIXED
  * tree.py _code_execution(): when the model's own code raises, the outer handler
