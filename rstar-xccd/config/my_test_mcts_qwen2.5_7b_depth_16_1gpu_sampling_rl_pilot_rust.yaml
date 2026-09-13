@@ -1,0 +1,52 @@
+# Rollout-mining pilot for the rl-self-improvement branch (RL_IDEAS.txt
+# section 5b). NOT an eval config -- is_sampling: True is deliberate here:
+# unlike every eval config in this project, this run is meant to use
+# ground truth to guide the search toward correct completions (via
+# eval_final_answer()'s is_equiv(self.ground_truth, final_answer) reward,
+# see mcts.py), because the point is to mine MANY candidate rollouts per
+# question and then filter to the genuinely-correct, genuinely-executed
+# ones for SFT -- using the label to help find those candidates is
+# standard rejection-sampling practice, not the same thing as evaluating
+# with the label visible. Only ever run this on eval_data/rl_train_*
+# files, never on rl_heldout_* or the full test_python_*_CLCCD.jsonl.
+#
+# Same v3 rust prompt pair as config/..._code2_exec_rust_v3.yaml (the
+# fixed harness + >=3-diverse-test-inputs prompt), wider sampling budget
+# for rollout diversity: n_generate_sample/best_of 2->4, iterations 2->3,
+# temperature 0.7->0.9.
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_code2_exec_python_rust_v3.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt_code2_exec_python_rust_v3.json"
+
+swap_space: 8
+temperature: 0.9
+top_p: 0.9
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 4
+best_of: 4
+is_sampling: True
+iterations: 3
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 3
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 1

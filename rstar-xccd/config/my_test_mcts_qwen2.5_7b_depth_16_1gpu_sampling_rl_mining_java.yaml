@@ -1,0 +1,50 @@
+# Rollout-mining config for the rl-self-improvement branch, java. Mirrors
+# config/my_test_mcts_qwen2.5_7b_depth_16_1gpu_sampling_rl_pilot_rust.yaml's
+# sampling budget exactly (is_sampling=True, n_generate_sample/best_of 4,
+# iterations 3, temperature 0.9 -- see that file for why is_sampling=True is
+# deliberate here and not a mistake), but swaps in the java-specific
+# code2-exec-lang-fewshot-v2 few-shot/prompt pair -- the best-performing 7B
+# java configuration measured this session (full-dataset best-MCTS F1
+# 0.9541, see RESUME_HERE.txt / EXTERNAL_BASELINES_COMPARISON.txt).
+#
+# Only ever run this on eval_data/codenet_train_python_java.jsonl (pooled
+# test_same_python_java.jsonl + test_different_python_java.jsonl, a
+# pre-existing dataset independent of CLCCD -- checked directly, 0 exact
+# python-snippet overlap with eval_data/test_python_java_CLCCD.jsonl), never
+# on the CLCCD java file itself.
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_code2_exec_python_java_v2.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt_code2_exec_python_java_v2.json"
+
+swap_space: 8
+temperature: 0.9
+top_p: 0.9
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 4
+best_of: 4
+is_sampling: True
+iterations: 3
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 2
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 1

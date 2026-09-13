@@ -1,0 +1,161 @@
+================================================================================
+ rStar-XCCD -- How rejection-sampling SFT data is being built (rl-self-improvement)
+ Written 2026-09-13 04:29 EDT.  Branch: rl-self-improvement
+================================================================================
+
+This is the methodology writeup for the SFT-data-building process on the
+rl-self-improvement branch (see RL_IDEAS.txt for the original brainstorm and
+a dated log of decisions; this file describes the resulting PROCESS, end to
+end, as it stands). Nothing here has produced a fine-tuned model yet -- this
+covers data collection and curation only.
+
+
+1. GOAL
+--------------------------------------------------------------------------------
+Build a supervised fine-tuning dataset from this project's own MCTS search,
+using the rejection-sampling / STaR paradigm: mine many candidate reasoning
+traces per clone-detection question, keep only the ones that (a) reach the
+correct answer and (b) aren't trustworthy only by accident (see section 3),
+then fine-tune the policy model on those. Ground truth is used ONLY to
+select which of the model's own generated traces to keep -- the model is
+never shown the answer as input. This is standard RLVR/rejection-sampling
+practice (the same paradigm the rStar-Math lineage this repo descends from
+is built on), not "training on the test set" -- provided the eval set is
+never touched during mining, which is the entire point of section 2.
+
+
+2. DATA SOURCES -- TWO INDEPENDENT TRACKS, BOTH FEEDING THE SAME KIND OF MINING
+--------------------------------------------------------------------------------
+Track A -- CLCCD-internal split (eval_data/rl_train_python_{java,rust}_CLCCD.jsonl)
+  build_rl_split.py carves these out of the SAME test_python_{java,rust}_
+  CLCCD.jsonl files every F1 number in this project was computed on.
+  CORRECTED ONCE (see RL_IDEAS.txt): the first version stratified by label
+  at the record level; CLCCD builds several pair-records from the same
+  underlying CodeNet/XLCoST problem, so a record-level split let the same
+  problem land on both sides (measured: 98.8% of held-out rust problems and
+  8.6% of held-out java problems also had a training example from the same
+  problem). Fixed by recovering each record's problem_id (matching its
+  Python snippet against ../../CLCCD/data/{java_cn,java_xl}.json) and
+  splitting whole problem-groups instead. Verified 0 overlapping problems
+  for both languages. Sizes: java train=1440/heldout=360, rust
+  train=960/heldout=240.
+  RULE: mining and fine-tuning read ONLY rl_train_*; anything trained is
+  evaluated ONLY on rl_heldout_*, never on the full CLCCD file or rl_train.
+
+Track B -- the pre-existing "codenet same/different" dataset
+  (eval_data/codenet_train_python_{java,rust}.jsonl, 2000 questions each --
+  test_same_python_{java,rust}.jsonl + test_different_python_{java,rust}.jsonl
+  pooled and re-indexed). This is an OLDER dataset already in this repo,
+  built independently of the CLCCD work (file timestamps predate the CLCCD
+  construction by weeks). Checked directly before using it: extracted every
+  Python snippet from both pools and compared, verbatim, against every
+  Python snippet in test_python_{java,rust}_CLCCD.jsonl -- 0 exact-text
+  matches for all four files. This does NOT rule out a different accepted
+  solution to the same underlying problem appearing in both (a near-
+  duplicate, not an exact one), which exact-text matching cannot detect --
+  that risk has NOT been separately verified, unlike Track A where the
+  problem_id itself was directly checked.
+  ADVANTAGE over Track A: the full CLCCD test files (java AND rust) stay
+  completely untouched -- anything trained on Track B data alone can be
+  evaluated on the FULL 1800/1200-question CLCCD files, matching every
+  existing number in RESUME_HERE.txt / EXTERNAL_BASELINES_COMPARISON.txt
+  exactly, no held-out-subset asterisk needed.
+
+
+3. MINING: is_sampling=True, AND WHY THAT'S NOT A MISTAKE
+--------------------------------------------------------------------------------
+Every eval config in this project sets is_sampling: False -- the search
+must never see the ground truth (checked directly in mcts.py: is_sampling
+gates whether eval_final_answer() calls is_equiv(self.ground_truth,
+final_answer) to reward/penalize a leaf and feed that back into PUCT node
+selection). Mining configs on this branch deliberately set is_sampling:
+True -- using the label to guide the search toward correct completions
+during TRAINING-DATA GENERATION is exactly what rejection sampling is, not
+a leak, because the leaf traces this produces are what get imitated, and
+which ones get kept is decided by a REWARD (ground truth match), not by
+showing the model the answer.
+
+Sampling budget, both languages: n_generate_sample=4, best_of=4,
+iterations=3, temperature=0.9 (vs. every eval config's 2/2/2/0.7) -- wider
+branching and more rollouts per question, to mine multiple candidate traces
+rather than the one-shot-ish behaviour eval configs are tuned for.
+
+Configs used:
+  rust: config/my_test_mcts_qwen2.5_7b_depth_16_1gpu_sampling_rl_pilot_rust.yaml
+        (v3 rust prompt pair -- the fixed harness + >=3-diverse-test-inputs
+        rule, same one tested extensively in RESUME_HERE.txt section 3f)
+  java: config/my_test_mcts_qwen2.5_7b_depth_16_1gpu_sampling_rl_mining_java.yaml
+        (code2-exec-lang-fewshot-v2 -- the best-measured 7B java setup this
+        session, full-dataset best-MCTS F1 0.9541)
+
+
+4. CURATION FILTER -- "SAFE" vs "DANGEROUS" CORRECT LEAVES
+--------------------------------------------------------------------------------
+Not every leaf that reaches the correct final_answer is safe to imitate.
+mcts.py's harness fix (RESUME_HERE.txt section 3f) exists specifically
+because a leaf can claim to have seen execution output it never actually
+got -- a truncated code step's real observation was, before that fix,
+silently dropped, and later steps sometimes fabricated a plausible-looking
+result instead. A fabricated trace that HAPPENS to land on the right label
+is exactly the kind of example that must NOT be reinforced.
+
+Definition used (evaluate_clone_results.exec_outcome_of() walked up a
+leaf's full ancestor chain, by tag prefix):
+  SAFE   = the leaf's final_answer matches ground truth, AND EITHER
+             (a) some ancestor step actually ran code (exec_outcome=="ran"), i.e.
+                 the correct conclusion is backed by a real execution, OR
+             (b) no ancestor ever attempted to run code at all, i.e. the
+                 leaf is pure signature-level/textual reasoning that never
+                 claimed evidence it doesn't have (nothing to fabricate).
+  DANGEROUS = final_answer matches ground truth, but some ancestor DID
+              attempt code and got no_code/blocked/assertion_failed/error
+              (never a confirmed "ran") -- correct despite failed or absent
+              execution it may still be describing as if it succeeded.
+              EXCLUDED from the SFT set.
+
+Validated on the 30-question rust pilot (job 2958493, all known-hard
+questions, i.e. every one of the 30 was something a prior run got wrong):
+  28/30 (93.3%) questions had >=1 SAFE correct leaf; 157 safe leaves total,
+  60 dangerous leaves correctly excluded. Re-checked on the first 134/960
+  questions of the full-scale rl_train rust mining run (job 2961123): 125/134
+  (93.3%) safe, 747 safe leaves (avg 5.57/question), 164 dangerous excluded
+  -- the yield held up almost exactly moving from a hard-only subset to the
+  full (mixed-difficulty) train set, which is a good sign the filter and the
+  yield aren't an artifact of the small pilot sample.
+Scoring/curation script: rstar-xccd/score_rl_rollouts.py. Reports the
+safe/dangerous counts above for any mined-rollout file(s), and with
+--emit_sft PATH also writes one JSONL record per SAFE leaf: {question,
+answer, source_file, index, leaf_tag, target_text}, where target_text is
+the full root-to-leaf generated trace (every ancestor's "text" field,
+joined by step_delim) -- i.e. the actual SFT training target. Verified
+against the pilot file: reproduces 28/30, 157 safe leaves, 60 excluded
+exactly, and the emitted file has the expected 157 lines.
+
+
+5. JOBS RUN / IN FLIGHT (as of 2026-09-13 04:29 EDT)
+--------------------------------------------------------------------------------
+  2958493  COMPLETED  rust, 30-question pilot (rl_train, hard subset)
+  2961123  RUNNING    rust, FULL rl_train (960 q) -- ~7-12h estimated
+  2963346  PENDING    java, codenet track (2000 q, ~18-30h estimated)
+  2963347  PENDING    rust, codenet track (2000 q, ~18-30h estimated)
+No java mining has been run on Track A (rl_train_python_java_CLCCD.jsonl)
+yet -- only rust has a completed pilot + full-scale run on Track A so far.
+
+
+6. NOT YET DONE
+--------------------------------------------------------------------------------
+ a) Java Track A mining (rl_train_python_java_CLCCD.jsonl) -- not started.
+ b) DONE 2026-09-13 04:29 EDT: score_rl_rollouts.py --emit_sft now writes
+    the actual training-ready file (see section 4). Still not done: running
+    it over the completed/in-flight jobs' full output and combining into
+    one curated SFT dataset per track/language once mining finishes.
+ c) Decide the actual fine-tuning recipe (full SFT vs LoRA, epochs, which
+    base checkpoint, mixing Track A and Track B data or keeping them
+    separate experiments) -- not decided.
+ d) Evaluate whatever gets fine-tuned: Track A results go on rl_heldout_*
+    ONLY; Track B results can go on the full CLCCD test files directly.
+ e) The near-duplicate-problem risk in Track B (section 2) noted but not
+    checked beyond exact-text matching -- worth a closer look (e.g.
+    fuzzy/AST-level similarity) before treating Track B as fully clean if
+    Track B ever gets combined with Track A or cross-validated against it.
+================================================================================
