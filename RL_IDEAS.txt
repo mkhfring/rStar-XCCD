@@ -28,6 +28,23 @@ COMPARISON.txt stays valid as-is -- this split doesn't retroactively
 invalidate prior work, it just governs what's safe to do next on THIS
 branch).
 
+CORRECTION 2026-09-13 01:18 EDT: the split above was record-level only
+(stratified by clone/non-clone label, not by underlying problem). CLCCD
+builds several pair-records from the same CodeNet/XLCoST problem (one clone
+pair + multiple derangement-based non-clone pairs sharing the same Python
+side). Checked directly by rejoining problem_id from ../../CLCCD/data/
+{java_cn,java_xl}.json: 170 of 172 held-out RUST problems (98.8%) also had a
+training example from the SAME problem, and 28 of 327 held-out JAVA
+problems (8.6%) did too -- a real leakage channel independent of the
+label-stratified split, since a model could recognize a held-out question's
+problem from training rather than reasoning about the pair itself.
+build_rl_split.py now splits by problem_id (every record sharing a problem
+goes entirely to one side), verified 0/0 overlap for both languages after
+the fix. New sizes: java train=1440 (716/724) heldout=360 (184/176); rust
+train=960 (240/720) heldout=240 (60/180) -- close to the original label
+balance, exactly proportional for rust. Use these regenerated files; the
+first (leaky) split's files were overwritten by rerunning the same script.
+
 NOT YET DONE (next, per section 5b): the rollout-mining pilot -- raise
 temperature/best_of/iterations on a handful of rl_train hard questions,
 measure rollouts-needed-per-recovered-question with the CURRENT (post
