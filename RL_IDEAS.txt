@@ -3,6 +3,36 @@
  Written 2026-09-12 01:34 EDT.  Project: /project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD
 ================================================================================
 
+UPDATE 2026-09-13 01:09 EDT -- STARTED ON BRANCH rl-self-improvement
+--------------------------------------------------------------------------------
+Decided to pursue Option A (rejection-sampling SFT, section 2) first.
+
+Step 1 (section 5a, "fix the train/test split first") is DONE:
+rstar-xccd/build_rl_split.py carves a stratified (by clone/non-clone label),
+seeded (42) 80/20 split out of the full test_python_{java,rust}_CLCCD.jsonl
+files -- the same files every F1 number in RESUME_HERE.txt and
+EXTERNAL_BASELINES_COMPARISON.txt was computed on. Output:
+  eval_data/rl_train_python_java_CLCCD.jsonl    -- 1440 (720 clone / 720 non-clone)
+  eval_data/rl_heldout_python_java_CLCCD.jsonl   --  360 (180 clone / 180 non-clone)
+  eval_data/rl_train_python_rust_CLCCD.jsonl     --  960 (240 clone / 720 non-clone)
+  eval_data/rl_heldout_python_rust_CLCCD.jsonl   --  240 ( 60 clone / 180 non-clone)
+  eval_data/rl_split_report.txt                  -- same numbers, from the script itself
+
+RULE GOING FORWARD ON THIS BRANCH: rollout mining and any fine-tuning read
+ONLY the rl_train_* files. Every evaluation of anything trained on this
+branch reports ONLY on the rl_heldout_* files, never on the full
+test_python_{java,rust}_CLCCD.jsonl or on rl_train_* directly. The original
+full files are untouched and still valid for anything NOT trained on this
+branch (i.e. every number already in RESUME_HERE.txt / EXTERNAL_BASELINES_
+COMPARISON.txt stays valid as-is -- this split doesn't retroactively
+invalidate prior work, it just governs what's safe to do next on THIS
+branch).
+
+NOT YET DONE (next, per section 5b): the rollout-mining pilot -- raise
+temperature/best_of/iterations on a handful of rl_train hard questions,
+measure rollouts-needed-per-recovered-question with the CURRENT (post
+2026-09-12 bugfix) harness, before committing to mining at real scale.
+
 Context: asked "how practical is it to use the failed samples for a
 reinforcement learning approach", after this session's rust code2-exec fix
 work produced several curated failed-sample sets (build_failed_dataset.py
