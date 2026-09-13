@@ -132,23 +132,42 @@ against the pilot file: reproduces 28/30, 157 safe leaves, 60 excluded
 exactly, and the emitted file has the expected 157 lines.
 
 
-5. JOBS RUN / IN FLIGHT (as of 2026-09-13 04:29 EDT)
+5. JOBS RUN / IN FLIGHT (updated 2026-09-13 10:17 EDT)
 --------------------------------------------------------------------------------
   2958493  COMPLETED  rust, 30-question pilot (rl_train, hard subset)
-  2961123  RUNNING    rust, FULL rl_train (960 q) -- ~7-12h estimated
-  2963346  PENDING    java, codenet track (2000 q, ~18-30h estimated)
-  2963347  PENDING    rust, codenet track (2000 q, ~18-30h estimated)
+  2961123  FAILED     rust, FULL rl_train (960 q) -- died at 589/960, 4h47m
+           in, no traceback in either log, MaxRSS ~27G (well under the 64G
+           request) -- cause never identified. Resumed rather than
+           restarted (main.py --resume globs for the same qaf/mode/model/
+           branch output and appends; removed this launcher's --no-resume).
+  2967790  COMPLETED  rust, FULL rl_train resume -- finished the remaining
+           371 questions in 2h30m, appended to the SAME output file as
+           2961123 (verified: file identity and line count both confirmed
+           resume, not restart, before this job was trusted).
+  RESULT (full 960/960 rust rl_train, both jobs combined):
+    885/960 questions (92.2%) yielded >=1 safe correct leaf -- consistent
+    with the pilot (93.3%) and the earlier partial check (93.3%), so the
+    yield held up moving from a 30-question hard-only sample all the way to
+    the complete, mixed-difficulty 960-question set.
+    5347 safe leaves total, 1178 dangerous leaves excluded.
+    Curated SFT file: eval_data/sft_rl_train_rust_v1.jsonl (5347 examples),
+    via: python score_rl_rollouts.py <output.jsonl> --emit_sft eval_data/sft_rl_train_rust_v1.jsonl
+  2963346  RUNNING    java, codenet track (2000 q, ~1 day left of 30h budget)
+  2963347  RUNNING    rust, codenet track (2000 q, ~1 day left of 30h budget)
 No java mining has been run on Track A (rl_train_python_java_CLCCD.jsonl)
-yet -- only rust has a completed pilot + full-scale run on Track A so far.
+yet -- only rust has a completed Track A run so far. Track A rust is now
+DONE end-to-end (mining + curated SFT file); Track B (both languages) is
+still mining.
 
 
 6. NOT YET DONE
 --------------------------------------------------------------------------------
  a) Java Track A mining (rl_train_python_java_CLCCD.jsonl) -- not started.
  b) DONE 2026-09-13 04:29 EDT: score_rl_rollouts.py --emit_sft now writes
-    the actual training-ready file (see section 4). Still not done: running
-    it over the completed/in-flight jobs' full output and combining into
-    one curated SFT dataset per track/language once mining finishes.
+    the actual training-ready file (see section 4).
+    DONE 2026-09-13 10:17 EDT for rust Track A specifically: eval_data/
+    sft_rl_train_rust_v1.jsonl, 5347 examples. Still not done: the same for
+    java Track A (not mined yet) and both Track B languages (still mining).
  c) Decide the actual fine-tuning recipe (full SFT vs LoRA, epochs, which
     base checkpoint, mixing Track A and Track B data or keeping them
     separate experiments) -- not decided.
