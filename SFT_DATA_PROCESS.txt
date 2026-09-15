@@ -188,21 +188,83 @@ this project, not investigated further.
     files (section 5).
  b) DONE: score_rl_rollouts.py --emit_sft writes the training-ready file
     (see section 4); done for all four completed mining runs.
- c) NEXT: decide the fine-tuning recipe and actually combine/curate the 4
-    SFT files into whatever training run(s) get launched -- full SFT vs
-    LoRA, which base checkpoint, Track A vs Track B vs combined as separate
-    experiments. Nothing here decided yet. See also the microsoft/rStar
-    repo (rStar-math branch, cloned to ../rStar -- one level outside this
-    repo, alongside CLCCD/ZC3/C4/LLM_Code_Clone_Validation) for a candidate
-    SFT training script (train/train_SFT.py) -- feasibility check was in
-    progress when this note was written; not yet concluded.
- c) Decide the actual fine-tuning recipe (full SFT vs LoRA, epochs, which
-    base checkpoint, mixing Track A and Track B data or keeping them
-    separate experiments) -- not decided.
+ c) DONE 2026-09-15, see section 7: fine-tuning infrastructure set up from
+    microsoft/rStar (rStar-math branch), first Track B (java+rust combined)
+    SFT run in flight. Track A mining, and mixing Track A with Track B, are
+    still undecided/not done -- see section 7 for exactly what's running.
  d) Evaluate whatever gets fine-tuned: Track A results go on rl_heldout_*
     ONLY; Track B results can go on the full CLCCD test files directly.
  e) The near-duplicate-problem risk in Track B (section 2) noted but not
     checked beyond exact-text matching -- worth a closer look (e.g.
     fuzzy/AST-level similarity) before treating Track B as fully clean if
     Track B ever gets combined with Track A or cross-validated against it.
+
+
+7. FIRST FINE-TUNING ATTEMPT (2026-09-15)
+--------------------------------------------------------------------------------
+Cloned microsoft/rStar (github.com/microsoft/rStar), rStar-math branch, to
+../rStar (one level outside this repo, alongside CLCCD/ZC3/C4/
+LLM_Code_Clone_Validation) -- this is the codebase rstar_deepthink was
+originally forked from (confirmed directly: its special tokens
+'<end_of_step>'/'<end_of_code>'/etc. are literally this project's own step
+tags). Copied its train/ directory (train_SFT.py, train_RM.py, and
+supporting scripts) plus extra_sft_file.py/extra_rm_file.py into this repo
+as the starting point for actually fine-tuning on the curated SFT data.
+
+FIRST SUBMISSION (job 3081888, "q2.5-7b-sft-trackB", Track B java+rust
+combined, 21853 examples, 4xA100) FAILED after 1m47s: ModuleNotFoundError:
+No module named 'pyarrow' (needed by transformers' `datasets` import).
+FIX: pyarrow comes from this cluster's `arrow` environment module and must
+be loaded BEFORE venv activation (pip install fails here) -- added
+`module load ... gcc arrow/15.0.1 ...` to the launcher.
+
+SEPARATELY, and more importantly: train_SFT.py's own PROMPT_DICT wraps the
+training "instruction" in a generic "<|user|>:\n{instruction}\n<|assistant|>:
+Let's think step by step and solve the problem with code." template lifted
+from the original math use case. Checked an actual training example built
+by the original train/prepare_sft_data.py: "instruction" was just the bare
+question text -- no system message, no format-rule explanation, no
+few-shot worked examples, not even the model's real chat-template markup
+(<|im_start|>/<|im_end|>). Training on that would teach the model to
+continue from a prompt shape it will never see again at eval time (every
+eval path in this project builds prompts via rstar_prompt_wrap(), which
+DOES include all of that).
+FIX: train/build_full_prompts.py reconstructs the real generation-time
+prompt by calling rstar_prompt_wrap() itself -- the exact function
+main.py's MCTS search calls -- per source language (java uses
+code2-exec-lang-fewshot-v2's config, rust uses the v3 config; num_few_shot
+exactly equals each few-shot pool's size for every mining job run this
+branch, so the "random" example selection was deterministic -- always the
+full pool -- safe to reproduce without knowing which subset backed any
+specific trace). train_SFT.py's PROMPT_DICT is now a pure passthrough
+("{instruction}") so it doesn't re-wrap an already-complete prompt.
+Verified on a 2-example sample: the rebuilt instruction ends exactly at
+"<|im_end|>\n<|im_start|>assistant\n", joining cleanly with the leaf's own
+generated text (which starts "\n<analysis>\n...").
+
+SIDE INCIDENT while investigating: found rstar-xccd/main.py had been
+overwritten with an unrelated ~15-line code snippet (clearly a leaked
+scratch file from a clone-detection question -- e.g. "isPossibleToZero"),
+dated 2026-09-14 22:51, during the session gap between conversations. Cause
+not conclusively identified -- the timing overlaps with the java Track A
+mining job (3053941, running 18:27-05:24) but the mechanism wasn't
+confirmed. Fixed via `git restore` (main.py is tracked; the corruption was
+a clean, fully-recoverable working-tree diff, not a commit). Flagging this
+here in case it recurs -- if main.py or another top-level tracked file ever
+looks wrong, check `git status`/`git diff` before trusting it.
+
+Job 3121560 ("q2.5-7b-sft-trackB", both fixes applied) submitted
+2026-09-15, in flight as of this writing. 2 epochs, effective batch size
+128 (per_device=4 x grad_accum=8 x 4 GPUs), FSDP full_shard on
+Qwen2DecoderLayer, lr 7e-6, output to sft_checkpoints/qwen2.5-7b-trackB-v1.
+Not yet evaluated -- per section 6d, once trained this model should be
+evaluated on the FULL eval_data/test_python_{java,rust}_CLCCD.jsonl (Track
+B never touched those files), directly comparable to every existing
+baseline number in RESUME_HERE.txt / EXTERNAL_BASELINES_COMPARISON.txt.
+
+STILL NOT DONE: a Track A fine-tuning run (would need to eval on
+rl_heldout_* only, not the full CLCCD files); any run combining Track A +
+Track B; a decision on whether full SFT (current approach) or LoRA is
+preferred going forward -- this first run is full-parameter FSDP, matching
+the original rStar-Math recipe, not LoRA.
 ================================================================================
