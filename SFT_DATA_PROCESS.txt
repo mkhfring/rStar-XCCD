@@ -164,30 +164,38 @@ exactly, and the emitted file has the expected 157 lines.
     being the harder language pair all session (see EXTERNAL_BASELINES_
     COMPARISON.txt / RESUME_HERE.txt), not yet investigated further.
 
-No java mining has been run on Track A (rl_train_python_java_CLCCD.jsonl)
-yet -- that is the one remaining gap. Every other track/language combo now
-has a completed mining run and a curated SFT file:
-  eval_data/sft_rl_train_rust_v1.jsonl     (Track A rust, 5347 examples)
-  eval_data/sft_codenet_java_v1.jsonl      (Track B java, 11347 examples)
-  eval_data/sft_codenet_rust_v1.jsonl      (Track B rust, 10506 examples)
+ALL FOUR TRACK/LANGUAGE COMBOS NOW MINED AND CURATED (updated 2026-09-15
+17:46 EDT). Job 3053941 (java Track A, rl_train_python_java_CLCCD.jsonl,
+1440 questions) completed cleanly in 10h57m -- no resume needed this time,
+unlike rust Track A's unexplained mid-run failure. Result: 1353/1440 (94.0%)
+safe questions, 8032 safe leaves, 1699 dangerous excluded.
+
+  eval_data/sft_rl_train_rust_v1.jsonl     (Track A rust,  960 q, 92.2% safe, 5347 examples)
+  eval_data/sft_rl_train_java_v1.jsonl     (Track A java, 1440 q, 94.0% safe, 8032 examples)
+  eval_data/sft_codenet_rust_v1.jsonl      (Track B rust, 2000 q, 87.7% safe, 10506 examples)
+  eval_data/sft_codenet_java_v1.jsonl      (Track B java, 2000 q, 93.3% safe, 11347 examples)
+
+Total across all four: 35232 curated SFT examples. Rust consistently yields
+a few points lower than java in both tracks (92.2% vs 94.0% Track A; 87.7%
+vs 93.3% Track B) -- consistent with rust being the harder pair throughout
+this project, not investigated further.
 
 
 6. NOT YET DONE
 --------------------------------------------------------------------------------
- a) Java Track A mining (rl_train_python_java_CLCCD.jsonl) -- STILL not
-    started. This is now the only uncompleted mining run across both
-    tracks/both languages. Config already exists and is proven (same one
-    used for the java codenet run): config/my_test_mcts_qwen2.5_7b_depth_16_
-    1gpu_sampling_rl_mining_java.yaml. Just needs a launcher pointed at
-    eval_data/rl_train_python_java_CLCCD.jsonl (1440 questions) instead of
-    the codenet file.
+ a) DONE 2026-09-15: java Track A mining complete (job 3053941). All four
+    track/language combos now have completed mining runs and curated SFT
+    files (section 5).
  b) DONE: score_rl_rollouts.py --emit_sft writes the training-ready file
-    (see section 4); done for all three completed mining runs (section 5).
- c) NEXT, once (a) is done: decide the fine-tuning recipe (section 6c,
-    still open) and actually combine/curate the 4 SFT files (3 done + java
-    Track A) into whatever training run(s) get launched -- full SFT vs
+    (see section 4); done for all four completed mining runs.
+ c) NEXT: decide the fine-tuning recipe and actually combine/curate the 4
+    SFT files into whatever training run(s) get launched -- full SFT vs
     LoRA, which base checkpoint, Track A vs Track B vs combined as separate
-    experiments. Nothing here decided yet.
+    experiments. Nothing here decided yet. See also the microsoft/rStar
+    repo (rStar-math branch, cloned to ../rStar -- one level outside this
+    repo, alongside CLCCD/ZC3/C4/LLM_Code_Clone_Validation) for a candidate
+    SFT training script (train/train_SFT.py) -- feasibility check was in
+    progress when this note was written; not yet concluded.
  c) Decide the actual fine-tuning recipe (full SFT vs LoRA, epochs, which
     base checkpoint, mixing Track A and Track B data or keeping them
     separate experiments) -- not decided.
