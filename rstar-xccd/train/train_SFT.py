@@ -279,7 +279,17 @@ def train():
         cache_dir=training_args.cache_dir,
         trust_remote_code=True,
         attn_implementation=model_args.attn_impl,
-        torch_dtype=torch.bfloat16 if model_args.attn_impl == "flash_attention_2" else torch.float32,
+        # UPDATE 2026-09-15: was `torch.bfloat16 if attn_impl=="flash_attention_2"
+        # else torch.float32` -- with the default eager attn_impl (this
+        # launcher never passes --attn_impl), this loaded the FULL model in
+        # fp32 on every one of the 4 distributed ranks BEFORE FSDP could
+        # shard it, i.e. ~4x the fp32 footprint of a single 7B model
+        # simultaneously in host RAM. That is what caused job 3121560's
+        # OOM kill during checkpoint-shard loading (MaxRSS hit the 128G
+        # limit exactly). training_args.bf16=True already asks for a bf16
+        # training run; the initial load should match that regardless of
+        # attn_impl, not silently fall back to fp32.
+        torch_dtype=torch.bfloat16 if training_args.bf16 else torch.float32,
         use_cache = False,
     )
 
