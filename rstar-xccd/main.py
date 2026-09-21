@@ -115,7 +115,11 @@ if __name__ == '__main__':
     qaf_stem, qaf_ext = os.path.splitext(args.qaf)
     qaf_tag = f"{qaf_stem}_depth_{config.max_depth}{qaf_ext}"
     branch_tag = f".{args.branch}" if args.branch else ""
-    run_tag = f"{qaf_tag}.{config.mode}.{llm_version}{branch_tag}"
+    # Slurm account (e.g. def-fard_gpu) folded into the name/resume glob so the same
+    # job submitted under different accounts never shares or resumes the other's output.
+    account = os.environ.get("SLURM_JOB_ACCOUNT", "")
+    account_tag = f".{account}" if account else ""
+    run_tag = f"{qaf_tag}.{config.mode}.{llm_version}{branch_tag}{account_tag}"
     saved_jsonl_file = f"{run_tag}.{datetime.now().strftime('%Y%m%d%H%M%S')}.jsonl"
 
     if args.save_in_model:

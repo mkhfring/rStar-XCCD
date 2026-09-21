@@ -1,0 +1,81 @@
+% Our CLCCD pure-inference (single-pass, no search) results vs. our own
+% best-MCTS (search) counterparts, same models, same test sets.
+% Source, full P/R/F1/confusion-matrix rows (Qwen3-4B, Qwen2.5-Coder-3B):
+%   FINAL_FOR_CLCCD.md "Results" table (the frozen final-for-clccd config:
+%   assert-consistency-score + clone-on-disagreement + exec-signature
+%   override), cross-checked against EVALUATOR_CHANGES.md's
+%   "java/Q3 assert +sig+cod" / "rust/Q3 assert +sig+cod" /
+%   "java/Q2.5 assert +sig+cod" / "rust/Q2.5 assert +sig+cod" rows.
+%   Pure-inference rows: pure_inference/offline_results/
+%   test_python_{java,rust}_CLCCD.jsonl_*_evaluate_result.txt.
+% F1-only rows (Qwen2.5-Coder-7B): EXTERNAL_BASELINES_COMPARISON.txt
+%   section 2 and section 4b -- no confusion-matrix breakdown was ever saved
+%   for this best-MCTS run.
+% Requires \usepackage{booktabs} and \usepackage{multirow}.
+
+\begin{table}[t]
+\centering
+\caption{Our pure-inference results vs. our own best-MCTS (search)
+counterparts, same model and same test set. MCTS numbers are the frozen
+\texttt{final-for-clccd} configuration (assert-consistency scoring +
+clone-on-disagreement aggregation + execution-signature override); full
+confusion matrices are in \texttt{FINAL\_FOR\_CLCCD.md}. Python--Java:
+$n=1{,}800$; Python--Rust: $n=1{,}200$.}
+\label{tab:pure-vs-mcts}
+\begin{tabular}{llcccc}
+\toprule
+Model & Method & Precision & Recall & $F_1$ & Response rate \\
+\midrule
+\multirow{2}{*}{Qwen3-4B (Python--Java)}
+ & Pure inference & 0.9665 & 0.8022 & 0.8767 & 100.00\% \\
+ & Best MCTS       & 1.0000 & 0.8964 & \textbf{0.9454} & 99.89\%  \\
+\addlinespace
+\multirow{2}{*}{Qwen3-4B (Python--Rust)}
+ & Pure inference & 0.4351 & 0.5367 & 0.4806 & 100.00\% \\
+ & Best MCTS       & 0.9676 & 0.7967 & \textbf{0.8739} & 100.00\% \\
+\addlinespace
+\multirow{2}{*}{Qwen2.5-Coder-3B (Python--Java)}
+ & Pure inference & 0.9245 & 0.9677 & 0.9457 & 99.94\%  \\
+ & Best MCTS       & 0.9860 & 0.8669 & 0.9226 & 99.67\%  \\
+\addlinespace
+\multirow{2}{*}{Qwen2.5-Coder-3B (Python--Rust)}
+ & Pure inference & 0.4631 & 0.9633 & 0.6255 & 100.00\% \\
+ & Best MCTS       & 0.5994 & 0.7282 & \textbf{0.6576} & 99.58\%  \\
+\bottomrule
+\end{tabular}
+
+\vspace{4pt}
+{\footnotesize
+MCTS beats pure inference in 3 of 4 cells; the exception is Qwen2.5-Coder-3B
+on Python--Java, where pure inference (0.9457) beats this uniform MCTS
+configuration (0.9226). For the Python--Rust/Qwen2.5-Coder-3B cell,
+\texttt{FINAL\_FOR\_CLCCD.md} itself flags this model as the one case where
+its default MCTS scorer (\texttt{clone-on-disagreement} + the
+execution-signature override) is the wrong choice: under the
+model-specific config (\texttt{--aggregation majority --no-exec-signature})
+the same rollout file instead scores 0.6711 rather than 0.6576 -- both
+still above pure inference's 0.6255, so the MCTS-wins conclusion for this
+cell holds either way, but the two MCTS numbers come from the same rollout
+file scored two different ways, so state which configuration is being
+reported.}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Same comparison for the one model where only $F_1$ -- not a full
+confusion matrix -- was recorded for the best-MCTS run.}
+\label{tab:pure-vs-mcts-f1only}
+\begin{tabular}{llc}
+\toprule
+Model & Method & $F_1$ \\
+\midrule
+\multirow{2}{*}{Qwen2.5-Coder-7B (Python--Java)}
+ & Pure inference & 0.9492 \\
+ & Best MCTS (v2)  & \textbf{0.9541} \\
+\addlinespace
+\multirow{2}{*}{Qwen2.5-Coder-7B (Python--Rust)}
+ & Pure inference & \textbf{0.8893} \\
+ & Best MCTS       & 0.8259 \\
+\bottomrule
+\end{tabular}
+\end{table}

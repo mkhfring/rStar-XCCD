@@ -1,0 +1,463 @@
+\section{Methodology}
+\label{sec:methodology}
+
+This section presents our methodology for Python-anchored cross-language code
+clone detection (XCCD) using execution-augmented search, inspired by
+rStar-Math. The central idea is to transform clone detection from a direct
+classification task into a search-and-verification problem: given two
+programs, one written in Python and the other in some other programming
+language, a policy model is required to reason about their input/output
+behavior, decide whether direct execution of both programs is warranted, run
+both programs when it is, and produce a stable, extractable conclusion about
+whether they are semantic clones. Multiple candidate reasoning trajectories
+are generated per pair using Monte Carlo Tree Search (MCTS), and a dedicated
+evaluator aggregates evidence across the resulting search tree into a single
+prediction. No model training, fine-tuning, or reinforcement learning is
+performed in the work described here; the framework is designed so that the
+trajectories it produces can later be used as training data, but that
+extension is left to future work.
+
+Our methodology has four main contributions. First, we design a structured
+prompt that forces the policy model to produce a stable and verifiable
+clone-detection output, expressed as an explicit reasoning-and-code trace
+rather than a bare label. Second, we let the model execute \emph{both}
+programs directly -- the Python side as an interpreted subprocess and the
+non-Python side compiled or interpreted as appropriate for its language --
+rather than asking the model to simulate or predict the second program's
+behavior. Third, we use MCTS as a search mechanism that generates and scores
+multiple candidate clone-analysis trajectories per pair, exploring alternative
+reasoning and testing strategies rather than committing to a single greedy
+generation. Fourth, we design a dedicated evaluator that aggregates the
+(possibly several, possibly disagreeing) leaf-level verdicts produced by a
+search tree into a single, calibrated prediction, and that treats a tree's own
+inability to settle a comparison as a further evidential signal in its own
+right.
+
+\subsection{Scope and Problem Formulation}
+\label{subsec:scope_problem}
+
+Let $c_p$ denote a Python source-code snippet and let $c_x$ denote a
+source-code snippet written in a non-Python programming language
+$\ell_x \in \mathcal{L}$, where $\mathcal{L}$ is the set of target languages
+under study (e.g., Java, Rust). In this study, we focus on Python-anchored
+XCCD, where every evaluated pair contains one Python program:
+\[
+    x = (c_p, c_x),
+    \qquad
+    \ell(c_p)=\text{Python},
+    \qquad
+    \ell(c_x)=\ell_x \neq \text{Python}.
+\]
+The goal is to predict a binary clone label
+\[
+    y \in \{\text{clone}, \text{non-clone}\}.
+\]
+
+This Python-anchored setting is a deliberate scope restriction that lets us
+evaluate the core hypothesis of this work -- whether letting a language model
+generate and directly execute behavioral tests improves XCCD -- without first
+solving fully language-agnostic XCCD (e.g., Java--Ruby or C++--Rust). Because
+one side of every pair is Python, the policy model can always ground its
+analysis in a directly runnable, interpreted reference implementation, while
+the non-Python side is executed through the appropriate toolchain for
+$\ell_x$ (Section~\ref{subsec:execution_model}).
+
+Two programs are considered semantic clones if they accept compatible input
+formats and produce equivalent outputs for valid inputs in the shared input
+domain. We define the input signature of a program $c$ as
+\[
+    \sigma(c) = (\tau, d, \kappa),
+\]
+where $\tau$ represents the input data types, $d$ represents the input
+dimensionality or structure, and $\kappa$ represents additional constraints
+such as input size, order, and formatting. The policy model's own reasoning
+step (Section~\ref{subsec:prompt_design}) begins by estimating and comparing
+$\sigma(c_p)$ and $\sigma(c_x)$. If it judges
+$\sigma(c_p) \neq \sigma(c_x)$ -- i.e., the two programs differ at the
+signature level, or are plainly unrelated -- it is instructed to skip
+behavioral testing and emit \texttt{print("not code clones")} directly,
+concluding non-clone without executing either program. Otherwise, it proceeds
+to generate and run behavioral tests before concluding.
+
+\paragraph{Remark on signature-based pruning.}
+Treating an apparent signature mismatch as sufficient evidence of non-clone is
+an operational simplification, not a guarantee: two genuine clones may
+legitimately differ in surface input conventions (for instance, reading three
+integers on separate lines versus a single comma-separated line), so an overly
+literal signature comparison risks false negatives. Unlike a hand-engineered
+canonicalization pass, this comparison is made by the policy model itself as
+part of its own reasoning trace, guided by the prompt's explicit instruction
+that a merely \emph{suspected} behavioral difference -- as opposed to a
+genuine difference in input/output type, arity, or purpose -- is not
+sufficient grounds to skip execution and must instead be settled by actually
+running both programs. This keeps signature-based pruning available as a
+cheap early exit for clearly unrelated pairs while pushing every borderline
+case toward direct execution.
+
+\subsection{Prompt Design}
+\label{subsec:prompt_design}
+
+The first contribution of this work is a structured prompt that requires the
+policy model to produce its analysis as an explicit, machine-parsable
+trajectory rather than a bare label. The model's response is required to
+consist of four tagged segments -- \texttt{<analysis>}, \texttt{<code>},
+\texttt{<output>}, and \texttt{<answer>} -- with a final decision expressed
+as \verb|\boxed{clone}| or \verb|\boxed{non-clone}| inside the answer segment.
+The prompt used in this work is shown in
+Fig.~\ref{fig:xccd-prompt}; it is language-agnostic modulo the specific
+compiler or interpreter invoked for $\ell_x$.
+
+\begin{figure}[t]
+\centering
+\begin{tcolorbox}[width=0.95\linewidth,
+title=\textbf{Prompt for Python-Anchored XCCD}, halign=left]
+\ttfamily\small
+Analyze the following two code snippets and determine whether they are
+semantic code clones. Focus on semantic behavior, not surface-level syntax.
+
+Your solution must include four parts: <analysis>, <code>, <output>, and
+<answer>.
+
+In <analysis>, summarize the behavior of each code snippet and compare their
+input/output behavior. Consider input type, output type, main logic, edge
+cases, and whether both snippets produce equivalent outputs for equivalent
+valid inputs.
+
+If the two snippets could plausibly be semantic clones, do not predict what
+Code 2 would print. Both snippets are complete programs that read standard
+input and write standard output, so run BOTH of them on the same input and
+compare the output they actually produce. A decision backed by two observed
+outputs is always worth more than a decision backed by reasoning about one of
+them.
+
+Code 2 is written in \{language\}. Compile and run it directly, the same way
+you run Code 1: the harness saves Code 2's exact source and compiles it
+before your step runs, appending the compile status to the output you
+receive; invoke the compiled program the same way you invoke Code 1. If
+compilation fails, the error text tells you why -- only then fall back to
+reasoning about Code 2's expected behavior, and say that the comparison is
+based on expected behavior rather than direct execution.
+
+Skip testing ONLY when the two snippets differ at the signature level --
+different input types, different output types, or plainly unrelated
+functionality. A suspicion that they behave differently is not a reason to
+skip: if the difference you suspect is behavioural (an off-by-one, a
+rounding or division rule, an edge case, a different tie-break), that is
+precisely what running both sides settles, so run them and let the two
+outputs decide. In the signature-level case only, write in the <code>
+section: print("not code clones")
+
+Keep every <code> step short: a few lines, and at most one or two test
+inputs per step. If you want more test cases, put them in additional steps
+instead of one long block.
+
+The final decision must be either clone or non-clone. Put the final decision
+inside \textbackslash boxed\{\}.
+
+Question: \{input\}
+\end{tcolorbox}
+\caption{Structured prompt used for Python-anchored XCCD. \{language\} and
+\{input\} are filled in per question; the model is additionally given a
+small number of worked examples in the same four-segment format, one of
+which is a signature-mismatch case resolved without execution and one of
+which is a behavioral case resolved by running both programs.}
+\Description{}
+\label{fig:xccd-prompt}
+\end{figure}
+
+A generated trajectory is required to end each reasoning or code segment with
+an explicit step delimiter, so that the search procedure
+(Section~\ref{subsec:mcts_search}) can cleanly split a response into discrete
+steps. The prompt also discourages relying on variable names, comments, or
+superficial syntactic similarity, and instructs the model to keep each
+\texttt{<code>} step short -- long code blocks that overrun the per-step
+generation budget are truncated and discarded, so the model is guided to
+spread multiple test cases across several short steps rather than one long
+one.
+
+\subsection{Execution Model}
+\label{subsec:execution_model}
+
+Unlike a design that only executes the Python side and asks the model to
+simulate or predict the non-Python program's output, both programs are
+executed directly whenever the model chooses to test. The Python snippet
+$c_p$ is saved to a scratch file and invoked as a subprocess of the Python
+interpreter. The non-Python snippet $c_x$ is saved to a scratch file named
+appropriately for $\ell_x$ (e.g., by its declared class name for Java) and,
+for compiled languages, compiled with the corresponding compiler (e.g.,
+\texttt{javac} for Java, \texttt{rustc} for Rust) before being invoked; for
+interpreted languages it is invoked directly. Compilation is triggered
+implicitly the first time the model's generated code names the compiler or
+the resulting binary, and the resulting compile status -- success, or the
+compiler's error output on failure -- is appended to what the model observes
+for that step, so a failed compilation is visible evidence the model can
+react to rather than a silent gap. Programs that depend on external libraries
+unavailable in the execution environment are reported as such rather than
+silently failing, and the model is instructed to fall back to reasoning about
+expected behavior only in that case.
+
+Given a test input $t$, executing $c_p$ and $c_x$ yields raw standard-output
+text
+\[
+    o_p = R_{\text{Python}}(c_p,t), \qquad o_x = R_{\ell_x}(c_x,t).
+\]
+Equivalence between $o_p$ and $o_x$ is judged by the policy model itself,
+typically by comparing the two observed outputs directly (optionally after
+stripping incidental whitespace) inside the same \texttt{<code>} step that
+produced them, rather than by a separate, formally specified cross-language
+equivalence procedure external to the model. This keeps the comparison
+flexible across arbitrary output shapes but means the model's own judgment of
+what counts as "the same output" is itself part of what is being evaluated;
+Section~\ref{subsec:limitations} discusses failure modes this can produce,
+such as numeric-formatting or integer-overflow discrepancies between
+languages that a literal string comparison treats as a genuine mismatch, or
+conversely a coincidental match on the specific inputs tested.
+
+All execution is subject to a bounded number of consecutive failures per
+trajectory (Section~\ref{subsec:mcts_search}) and runs in an isolated working
+directory per search job, so that concurrently generated scratch files and
+compiled artifacts from different questions or rollouts cannot interfere with
+one another. Environment state inherited from the model-serving process that
+would otherwise cause spurious, environment-induced compilation failures for
+certain languages is deliberately excluded from the compiler subprocess's
+environment.
+
+\subsection{Search Tree Construction}
+\label{subsec:search_space}
+
+Following the rStar-Math style of step-by-step reasoning, a clone-analysis
+response is decomposed into a sequence of reasoning and code steps. A
+reasoning trajectory is
+\[
+    T_r = (s_1, s_2, \ldots, s_m),
+\]
+where each $s_i$ is one step of model-generated text -- a chunk of
+\texttt{<analysis>} reasoning, a \texttt{<code>} block together with its
+appended \texttt{<output>} observation, or the terminal \texttt{<answer>}
+segment -- ending at a step delimiter. Unlike a fixed, hand-specified
+decomposition, $m$ is not fixed in advance: the prompt allows (and, for
+multi-test-case reasoning, encourages) the number of intermediate steps to
+vary per trajectory, subject only to a maximum search depth.
+
+Each step is a node in a search tree. The root node is the original pair
+$(c_p,c_x)$, and child nodes are generated by extending the trajectory up to
+that node with a newly sampled continuation. A node is terminal if it
+contains a parsed final answer, or if the trajectory has failed -- through
+too many consecutive code-execution errors, exceeding the maximum depth, or
+producing text that cannot be parsed into a valid step -- in which case it is
+assigned a fixed failure marker rather than a clone/non-clone label.
+
+\subsection{MCTS-Based Search}
+\label{subsec:mcts_search}
+
+MCTS is used purely as an inference-time search and verification mechanism:
+for each pair $(c_p,c_x)$, the policy model $\pi_\theta$ generates multiple
+candidate trajectories, which are then aggregated into a single prediction by
+the evaluator (Section~\ref{subsec:evaluator}). No model parameters are
+updated during this process.
+
+At a non-terminal node $s$ with at least one non-terminal child, the next
+child to expand from is chosen by an upper-confidence selection rule:
+\[
+    \operatorname{UCT}(s)
+    =
+    Q(s)
+    +
+    c_{\text{puct}}
+    \sqrt{
+        \frac{\ln N(\operatorname{parent}(s))}{N(s)}
+    },
+\]
+where $Q(s)$ is the running average value backed up to $s$, $N(s)$ is its
+visit count, and $c_{\text{puct}}$ controls the exploration-exploitation
+trade-off; both terms are treated as zero for an as-yet-unvisited node.
+Expansion itself proceeds by sampling several candidate continuations from
+the policy model at temperature $>0$ for the selected node, each of which
+becomes a new child; the number of continuations sampled per expansion is a
+configuration parameter of the search (Section~\ref{subsec:experimental_setting}).
+
+Backup along a trajectory is driven by execution outcomes rather than by a
+learned process-reward model in the setting evaluated in this work: when a
+generated code step raises a genuine execution error (as opposed to, e.g., a
+self-written assertion the model used to test its own equivalence claim,
+which is scored separately for internal consistency once the branch's
+eventual conclusion is known), a negative value is backed up from that node
+to the root, discouraging the search from re-exploring branches that produce
+broken code. Ground-truth-informed backup -- in which a trajectory's value is
+determined by whether its final conclusion matches the true label -- is
+supported by the underlying search implementation for future data-generation
+use, but is never invoked in the evaluation setting studied here: the search
+does not observe the label at any point while producing its predictions, and
+no learned value or reward model is queried during node selection in this
+work. A configurable number of independent rollouts is run from the root per
+question, and a configurable maximum depth bounds how many steps any single
+trajectory may take before it is forced to terminate.
+
+\subsection{The Evaluator: Multi-Trajectory Label Aggregation}
+\label{subsec:evaluator}
+
+Because MCTS run under the search procedure above can, and typically does,
+produce more than one terminal trajectory per question -- and because those
+trajectories can disagree -- our third contribution, and a necessary
+component of the overall pipeline, is a dedicated evaluator that turns a
+finished search tree into a single prediction. This is a deliberate departure
+from selecting a single highest-scoring trajectory: rather than trusting one
+path chosen by a value estimate, the evaluator treats every terminal leaf of
+the tree as a vote and combines the votes explicitly.
+
+\paragraph{Label extraction.} Every terminal node whose \texttt{<answer>}
+segment contains a parsed \verb|\boxed{}| decision contributes one vote. A
+leaf's raw decision text is normalized to \texttt{clone} or \texttt{non-clone}
+before voting, so that paraphrases of the intended label (for example,
+"semantic clone" or "not a clone") are still counted rather than discarded.
+Leaves whose trajectory ended in one of the fixed failure markers
+(Section~\ref{subsec:search_space}) do not vote.
+
+\paragraph{Vote aggregation.} Given the set of votes $V = \{v_1, \ldots,
+v_k\}$ collected from a tree's leaves, the predicted label is
+\[
+    \hat{y} =
+    \begin{cases}
+        \text{clone}, & \text{if } \exists\, v_i = \text{clone} \text{ (clone-on-disagreement)}, \\[4pt]
+        \displaystyle\arg\max_{c \in \{\text{clone},\text{non-clone}\}}
+        \bigl|\{v_i \in V : v_i = c\}\bigr|,
+        & \text{under plain majority voting},
+    \end{cases}
+\]
+with ties under plain majority broken in favor of the earliest-generated
+leaf. Which of the two aggregation rules is used is itself a modeling
+decision rather than a fixed default: clone-on-disagreement is only
+appropriate when the model's precision on the clone side substantially
+exceeds its recall, since conceding any disagreement to "clone" trades away
+a small amount of precision to recover false negatives, and is a net loss
+whenever that precision advantage does not hold. We select between the two
+rules per language pair based on this asymmetry, measured on
+held-out data.
+
+\paragraph{Fallback for trees with no valid vote.} If a tree produces no
+leaf with a parsable clone/non-clone decision at all -- $V = \emptyset$ -- the
+question would otherwise have no prediction. Rather than leaving it
+unanswered, the evaluator falls back to a signal drawn from \emph{why} the
+tree failed to settle the comparison: if any node in the tree shows a
+signature of having been unable to execute anything and complete the
+comparison it attempted -- for instance, code that never became a runnable
+program, a language side the execution environment does not support, or a
+self-raised assertion that was never resolved into a final decision -- the
+fallback predicts \texttt{clone}. This is deliberately restricted to trees
+with no other evidence: it is a fallback for an otherwise-unanswered
+question, not an override of a tree that already reached a real verdict. The
+justification is empirical rather than a priori: across held-out evaluation
+data, trees exhibiting this signature skew overwhelmingly toward genuinely
+being clones, consistent with the intuition that a pair whose equivalence is
+hard enough that no branch of the search could pin it down by actually
+running code is disproportionately likely to be a case where the two
+programs really are equivalent. The specific set of failure signatures that
+triggers this fallback is selected by validating candidate trigger subsets on
+held-out data rather than by reading whole-run accuracy, to avoid overfitting
+the rule to the evaluation set it is meant to improve.
+
+\subsection{Final Decision Rule}
+\label{subsec:final_decision}
+
+Putting the search and evaluator together, the label reported for a pair
+$(c_p,c_x)$ is
+\[
+    \hat{y}(c_p,c_x) = \operatorname{Evaluator}\bigl(\mathcal{B}(c_p,c_x)\bigr),
+\]
+where $\mathcal{B}(c_p,c_x)$ is the finished search tree produced by MCTS for
+that pair and $\operatorname{Evaluator}(\cdot)$ applies label extraction,
+vote aggregation, and the no-vote fallback as defined in
+Section~\ref{subsec:evaluator}. A question for which the evaluator returns no
+prediction at all -- which, given the fallback above, occurs only for trees
+with no vote and no qualifying failure signature -- is counted separately as
+a non-response rather than assigned an arbitrary label.
+
+\subsection{Experimental Setting}
+\label{subsec:experimental_setting}
+
+\paragraph{Datasets.} We evaluate on Python-anchored cross-language clone
+pairs derived from the CLCCD benchmark, which itself draws on Project
+CodeNet and XLCoST. The Python--Java pairs are pooled directly from both
+CodeNet- and XLCoST-derived CLCCD records that pair Java with Python,
+yielding 1{,}800 pairs balanced 900 clone / 900 non-clone. For target
+languages not natively paired with Python in CLCCD (e.g., Rust), pairs are
+constructed by joining CodeNet-derived Python and target-language solutions
+that solve the same underlying problem (yielding a clone pair) or different
+problems (yielding a non-clone pair); this bridged construction is limited by
+the number of CodeNet problems with both a Python and a target-language
+solution, and non-clone pairs are oversampled from that fixed pool of
+problems to reach a usable set size, giving an imbalanced but fixed
+clone:non-clone ratio (300 clone / 900 non-clone for the Rust pairs used in
+this work).
+
+\paragraph{Model.} We fix the policy model to Qwen3-4B, used without any
+additional fine-tuning, rather than evaluating the framework model-agnostically
+across a pool of instruction-tuned models of varying size and code
+specialization. This choice is the result of a preliminary comparison against
+Qwen2.5-Coder-3B-Instruct -- a code-specialized model at a comparable parameter
+count -- run under the same search configuration described below and reported
+in Table~\ref{tab:pure-vs-mcts}. Qwen3-4B is the model for which MCTS-driven
+search reliably improves on the same model's own pure (single-pass,
+non-search) inference baseline across both target languages studied here
+(Python--Java $F_1$: 0.8767 $\rightarrow$ 0.9454; Python--Rust $F_1$: 0.4806
+$\rightarrow$ 0.8739), including a large gain on the harder Python--Rust pair,
+whereas Qwen2.5-Coder-3B-Instruct is already close to ceiling on Python--Java
+without search (pure-inference $F_1$ 0.9457) and shows a net $F_1$ regression
+once the same MCTS configuration is applied there ($F_1$ 0.9226), driven by a
+recall loss that its precision gain does not offset. Because a central claim
+of this work is that search and direct execution improve XCCD over
+single-pass inference, we adopt the model for which that improvement actually
+materializes across both languages, rather than the model with the strongest
+code-specific pretraining or the highest pure-inference score in isolation.
+
+\paragraph{Search and decoding configuration.} Unless otherwise noted, the
+search is run with the following configuration for Qwen3-4B across every
+language pair. Sampling temperature 0.7, nucleus sampling $p=0.8$, top-$k=20$,
+repetition penalty 1.1, a minimum of 8 generated tokens and a maximum of 512
+generated tokens per step. The search explores up to a maximum depth of 16
+steps, samples 2 candidate continuations per expansion, and runs 2 independent
+rollouts per question. The exploration constant is $c_{\text{puct}}=2$. A
+trajectory is terminated as failed after 2 consecutive code-execution errors.
+Each prompt includes 2 worked few-shot examples in the same four-segment
+format as Fig.~\ref{fig:xccd-prompt}. The search never observes the
+ground-truth label at any point while producing its predictions.
+
+\paragraph{Metrics.} We report precision, recall, and $F_1$ over judged
+pairs,
+\[
+    \text{Precision} = \frac{TP}{TP+FP}, \qquad
+    \text{Recall} = \frac{TP}{TP+FN}, \qquad
+    F_1 = \frac{2\cdot\text{Precision}\cdot\text{Recall}}{\text{Precision}+\text{Recall}},
+\]
+alongside the \emph{response rate}: the fraction of pairs for which the
+evaluator (Section~\ref{subsec:evaluator}) returns a prediction at all,
+distinguishing genuine non-response from a wrong-but-confident answer.
+
+\subsection{Limitations}
+\label{subsec:limitations}
+
+The Python-anchored setting restricts the study to pairs in which one side is
+always Python, which makes direct dual-execution practical and lets us
+isolate the effect of prompt design, direct execution, search, and
+evaluator-level aggregation. It does not establish that the same approach
+transfers unchanged to arbitrary non-Python language pairs.
+
+A more fundamental limitation is the soundness gap inherent to any
+test-based notion of equivalence. Agreement on the tests a trajectory
+happens to generate is necessary but not sufficient for genuine semantic
+equivalence: two programs that are \emph{not} clones can agree on every
+tested input if the model's self-chosen tests do not happen to exercise the
+region where they actually differ, producing a false clone; we observed this
+concretely in practice, where trajectories that tested only a small number of
+similar, narrow, or otherwise low-diversity inputs occasionally concluded
+equivalence that a broader or more adversarial set of inputs would have
+contradicted. Symmetrically, since the equivalence check between two
+executed outputs is made by the model itself rather than by a
+language-agnostic, type-aware comparison, superficial cross-language output
+differences -- such as numeric formatting or differing integer-overflow
+behavior between languages -- can occasionally be read by the model as
+evidence of non-equivalence for a pair that is, in fact, a genuine clone. We
+therefore treat the framework's verdicts as empirical conclusions over the
+specific evidence a given trajectory happened to gather, rather than as a
+formal proof of equivalence, and report response rate alongside precision,
+recall, and $F_1$ so that abstention is not hidden inside an accuracy number.

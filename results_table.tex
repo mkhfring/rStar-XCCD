@@ -1,0 +1,158 @@
+% Pure-inference (single-pass, no search) results on CLCCD Python-Java and
+% Python-Rust, compared against the CLCCD paper's (Moumoula et al., FSE
+% 2025) own 5 LLMs. Source: EXTERNAL_BASELINES_COMPARISON.txt sections 2
+% and 2b, and pure_inference/offline_results/*_evaluate_result.txt.
+% Requires \usepackage{booktabs} and \usepackage{multirow}.
+
+\begin{table}[t]
+\centering
+\caption{Pure-inference (single-pass, no search) results on Python--Java
+clone detection, $n=1{,}800$. Literature rows are the CLCCD paper's own 5
+LLMs, rescored on the same pooled CodeNet+XLCoST population our
+Python--Java set is built from, so this comparison is apples-to-apples.}
+\label{tab:results-java}
+\begin{tabular}{llcccc}
+\toprule
+& Model & Precision & Recall & $F_1$ & Response rate \\
+\midrule
+\multirow{5}{*}{\rotatebox[origin=c]{90}{Ours}}
+& Qwen3-8B                     & 1.0000 & 0.9156 & \textbf{0.9559} & 100.00\% \\
+& DeepSeek-Coder-7B-Instruct-v1.5 & 0.9976 & 0.9078 & 0.9506 & 100.00\% \\
+& Qwen2.5-Coder-7B-Instruct    & 1.0000 & 0.9033 & 0.9492 & 100.00\% \\
+& Qwen2.5-Coder-3B-Instruct    & 0.9245 & 0.9677 & 0.9457 & 99.94\%  \\
+& Qwen3-4B                     & 0.9665 & 0.8022 & 0.8767 & 100.00\% \\
+\midrule
+\multirow{5}{*}{\rotatebox[origin=c]{90}{Literature}}
+& GPT-3.5-Turbo                & 0.9849 & 0.8700 & 0.9239 & 100.00\% \\
+& LLaMA2-7B-Chat               & 0.7957 & 0.7400 & 0.7668 & 100.00\% \\
+& Falcon-7B-Instruct           & 0.5136 & 0.8376 & 0.6368 & 99.94\%  \\
+& StarChat-beta                & 0.5872 & 0.5311 & 0.5578 & 99.94\%  \\
+& StarCoder2-15B-Instruct      & 0.8733 & 0.3600 & 0.5098 & 100.00\% \\
+\bottomrule
+\end{tabular}
+
+\vspace{4pt}
+{\footnotesize
+For reference only, not directly comparable to the rows above: a frozen
+\texttt{text-embedding-3-large} embedding with a cosine-similarity
+threshold calibrated on an 80\% held-out split and reported on the
+remaining 20\% test split ($n=360$) reaches Precision 0.9944, Recall
+0.9521, $F_1$ 0.9728 -- the single highest score of any method compared
+here, but under a different evaluation protocol (a fitted threshold, and a
+non-generative classification rather than a prompted or searched language
+model), so it is reported separately rather than ranked directly against
+the zero-shot rows above.}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Pure-inference (single-pass, no search) results on Python--Rust
+clone detection, $n=1{,}200$. No genuine Python--Rust literature baseline
+exists: the CLCCD paper's raw data pairs Java with a second language, never
+Python with Rust directly. The bottom block instead reports the same 5
+LLMs' \emph{Java--Rust} results ($n=600$, balanced 300/300) as context
+only, not as a like-for-like baseline.}
+\label{tab:results-rust}
+\begin{tabular}{llcccc}
+\toprule
+& Model & Precision & Recall & $F_1$ & Response rate \\
+\midrule
+\multirow{6}{*}{\rotatebox[origin=c]{90}{Ours}}
+& Qwen3-8B                     & 0.9807 & 0.8467 & \textbf{0.9088} & 100.00\% \\
+& Qwen2.5-Coder-7B-Instruct    & 0.9959 & 0.8033 & 0.8893 & 100.00\% \\
+& DeepSeek-Coder-7B-Instruct-v1.5 & 0.8028 & 0.7733 & 0.7878 & 99.92\%  \\
+& Qwen2.5-Coder-3B-Instruct    & 0.4631 & 0.9633 & 0.6255 & 100.00\% \\
+& Qwen3-4B                     & 0.4351 & 0.5367 & 0.4806 & 100.00\% \\
+& Phi-3-mini-128k-instruct     & 0.2795 & 0.9800 & 0.4349 & 99.83\%  \\
+\midrule
+\multirow{5}{*}{\rotatebox[origin=c]{90}{Lit.\ (Java--Rust)}}
+& GPT-3.5-Turbo                & 0.9954 & 0.7267 & 0.8401 & 100.00\% \\
+& LLaMA2-7B-Chat               & 0.5052 & 0.9633 & 0.6628 & 100.00\% \\
+& Falcon-7B-Instruct           & 0.5122 & 0.9130 & 0.6562 & 99.67\%  \\
+& StarChat-beta                & 0.6735 & 0.3311 & 0.4439 & 99.50\%  \\
+& StarCoder2-15B-Instruct      & 0.5882 & 0.1000 & 0.1709 & 100.00\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Same-model comparison: our pure-inference prompt (2 few-shot examples)
+% vs. the CLCCD paper's own zero-shot prompting approach (best of the
+% paper's 6 prompts: sp1, sp2, sim, reas, inte, sl), run on the SAME
+% models and the SAME test data. Isolates prompting method from model
+% choice. Source: EXTERNAL_BASELINES_COMPARISON.txt section 4, and
+% pure_inference/score_clccd_paper_prompts.py (rerun to confirm exact
+% P/R/F1/response-rate for each model's best paper prompt).
+% Requires \usepackage{booktabs} and \usepackage{multirow}.
+
+\begin{table}[t]
+\centering
+\caption{Same-model comparison of our pure-inference prompting (2 few-shot
+examples) against the CLCCD paper's own zero-shot prompting approach (best
+of its 6 prompts: sp1, sp2, sim, reas, inte, sl), on Python--Java,
+$n=1{,}800$. Both rows per model use identical test data and identical
+weights; only the prompt differs.}
+\label{tab:results-java-promptmethod}
+\begin{tabular}{llcccc}
+\toprule
+Model & Prompting method & Precision & Recall & $F_1$ & Response rate \\
+\midrule
+\multirow{2}{*}{Qwen2.5-Coder-3B-Instruct}
+ & Ours (few-shot)            & 0.9245 & 0.9677 & \textbf{0.9457} & 99.94\%  \\
+ & Paper prompt (best: sp2)   & 1.0000 & 0.7333 & 0.8462 & 100.00\% \\
+\addlinespace
+\multirow{2}{*}{Qwen2.5-Coder-7B-Instruct}
+ & Ours (few-shot)            & 1.0000 & 0.9033 & \textbf{0.9492} & 100.00\% \\
+ & Paper prompt (best: sp2)   & 1.0000 & 0.8022 & 0.8903 & 100.00\% \\
+\addlinespace
+\multirow{2}{*}{Qwen3-4B}
+ & Ours (few-shot)            & 0.9665 & 0.8022 & \textbf{0.8767} & 100.00\% \\
+ & Paper prompt (best: sp2)   & 1.0000 & 0.7444 & 0.8535 & 100.00\% \\
+\addlinespace
+\multirow{2}{*}{Qwen3-8B}
+ & Ours (few-shot)            & 1.0000 & 0.9156 & \textbf{0.9559} & 100.00\% \\
+ & Paper prompt (best: sp2)   & 1.0000 & 0.8300 & 0.9071 & 100.00\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Same-model comparison of our pure-inference prompting against the
+CLCCD paper's own zero-shot prompting approach, on Python--Rust,
+$n=1{,}200$. The paper-prompt column also shows a severe response-rate
+collapse for two models: its best-scoring prompt (\texttt{sl}) leaves the
+majority of Qwen2.5-Coder-3B's samples unparsed.}
+\label{tab:results-rust-promptmethod}
+\begin{tabular}{llcccc}
+\toprule
+Model & Prompting method & Precision & Recall & $F_1$ & Response rate \\
+\midrule
+\multirow{2}{*}{Qwen2.5-Coder-3B-Instruct}
+ & Ours (few-shot)            & 0.4631 & 0.9633 & \textbf{0.6255} & 100.00\% \\
+ & Paper prompt (best: sl)    & 0.3707 & 0.4057 & 0.3874 & 31.50\%  \\
+\addlinespace
+\multirow{2}{*}{Qwen2.5-Coder-7B-Instruct}
+ & Ours (few-shot)            & 0.9959 & 0.8033 & \textbf{0.8893} & 100.00\% \\
+ & Paper prompt (best: sl)    & 0.6032 & 0.6208 & 0.6119 & 75.83\%  \\
+\addlinespace
+\multirow{2}{*}{Qwen3-4B}
+ & Ours (few-shot)            & 0.4351 & 0.5367 & \textbf{0.4806} & 100.00\% \\
+ & Paper prompt (best: sp2)   & 1.0000 & 0.5167 & 0.6813 & 100.00\% \\
+\addlinespace
+\multirow{2}{*}{Qwen3-8B}
+ & Ours (few-shot)            & 0.9807 & 0.8467 & \textbf{0.9088} & 100.00\% \\
+ & Paper prompt (best: sp2)   & 1.0000 & 0.5367 & 0.6985 & 100.00\% \\
+\bottomrule
+\end{tabular}
+
+\vspace{4pt}
+{\footnotesize
+Note: for Qwen3-4B on rust, the paper prompt's $F_1$ (0.6813) is higher
+than ours (0.4806) -- the one exception to the pattern of the other 7
+(model, dataset) combinations, where our few-shot prompt wins. Requires
+\texttt{\textbackslash usepackage\{booktabs\}} and
+\texttt{\textbackslash usepackage\{multirow\}}, and \texttt{addlinespace}
+from \texttt{\textbackslash usepackage\{booktabs\}} (or drop the
+\texttt{\textbackslash addlinespace} lines if not using booktabs' spacing
+add-on).}
+\end{table}

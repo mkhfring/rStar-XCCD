@@ -1,0 +1,67 @@
+# Rollout-mining config for Qwen3-4B, rl-self-improvement-style SFT data
+# generation. Mirrors config/my_test_mcts_qwen2.5_7b_depth_16_1gpu_sampling_
+# rl_mining_java.yaml / ..._rl_pilot_rust.yaml's sampling budget exactly
+# (is_sampling=True, n_generate_sample/best_of 4, iterations 3, temperature
+# 0.9 vs. every eval config's 2/2/2/0.7 -- see those files for why
+# is_sampling=True is deliberate here and not a mistake: this is
+# rejection-sampling / STaR-style mining, ground truth is used only to pick
+# which of the model's own traces to keep for SFT, never shown as input).
+#
+# UNLIKE Qwen2.5-Coder-7B-Instruct, Qwen3-4B's own best-measured CLCCD
+# result (the assert-consistency-score runs, see mcts_comparison.tex /
+# FINAL_FOR_CLCCD.md) did not need a language-specific code2-exec few-shot
+# fix for either language -- both its java and rust "final" eval configs
+# use the plain few_shot_imprvoed.json / mcts_prompt.json pair (see e.g.
+# q3-clccd-pj-4b-mcts-d16-assert-consistency-score_2429953.log.out /
+# q3-clccd-pr-4b-mcts-d16-assert-consistency-score_2429954.log.out). So,
+# unlike the 7B mining configs, ONE config here covers both java and rust
+# mining runs -- no v2/v3 per-language variant needed.
+#
+# Used for two mining tracks (see SFT_DATA_PROCESS.txt for the Track A /
+# Track B naming this mirrors, now redone for Qwen3-4B):
+#   "hard"    -- eval_data/failed_qwen3_4b_rl_train_{java,rust}.jsonl, the
+#                samples Qwen3-4B's own frozen final-for-clccd config got
+#                wrong within the rl_train split (never rl_heldout_* or the
+#                full test_python_*_CLCCD.jsonl -- see build_failed_dataset.py
+#                and RL_IDEAS.txt for why the held-out discipline matters).
+#   "codenet" -- eval_data/codenet_train_python_{java,rust}.jsonl, the
+#                pre-existing non-CLCCD dataset (0 exact python-snippet
+#                overlap with the CLCCD test files, checked directly for
+#                the Qwen2.5-7B Track B run and unchanged here since it's
+#                the same source file).
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_imprvoed.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt.json"
+
+swap_space: 8
+temperature: 0.9
+top_p: 0.9
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 4
+best_of: 4
+is_sampling: True
+iterations: 3
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 2
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 1
