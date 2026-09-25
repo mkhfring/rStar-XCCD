@@ -19,6 +19,7 @@ from rstar_deepthink.constants import (
 from .tree import BaseTree, code_execution, collect_action_inputs, extract_program
 from .beam_search import BS
 from evaluate_clone_results import normalize_label, NO_CODE_MESSAGE
+from .step_scoring import score_code_step, score_leaf
 
 # Matches an `assert` statement in generated code, used to decide whether a
 # python_interpreter step made an equivalence claim worth checking for
@@ -137,6 +138,46 @@ class MCTS(BS):
             observation_wrapped = self.obs_wrap(observation)
             new_node.state["text"] = f"{step_result}{self.config.step_delim}{observation_wrapped}"
 
+            if getattr(self.config, "score_version", "v1") == "v2":
+                self._score_code_step_v2(node, new_node, parser_result, step_result, observation)
+            else:
+                self._score_code_step_v1(node, new_node, parser_result, step_result, observation)
+        else:
+            new_node.state["text"] = step_result
+
+        if not new_node.is_terminal and new_node.depth > self.config.max_depth:
+            new_node.is_terminal = True
+            new_node.state["final_answer"] = TOO_MANY_STEPS
+            self.eval_final_answer(new_node)
+
+        node.children.append(new_node)
+
+    def _score_code_step_v2(self, node, new_node, parser_result, step_result, observation) -> None:
+        """score_version "v2" -- see rstar_deepthink/agents/step_scoring.py."""
+        history_action_inputs = collect_action_inputs(node, parser_result["action"])
+        executed_code = extract_program(''.join(history_action_inputs) + parser_result["action_input"])
+        reward, verdict, counts_as_error = score_code_step(
+            observation, executed_code, self.config.positive_reward, self.config.negative_reward,
+            getattr(self.config, "code2_bonus", 0.5))
+        if counts_as_error:
+            new_node.consecutive_errors = node.consecutive_errors + 1
+            if new_node.consecutive_errors >= self.config.errors_threshold:
+                wrapped = self.obs_wrap(observation)
+                step_result = step_result + CODE_END if CODE_END not in step_result else step_result
+                new_node.state["text"] = f"{step_result}{self.config.step_delim}{wrapped}"
+                new_node.is_terminal = True
+                new_node.state["final_answer"] = TOO_MANY_CODE_ERRORS
+                self.eval_final_answer(new_node)
+                return
+        if verdict is not None:
+            new_node.state["assert_verdict"] = verdict
+        elif reward is not None:
+            new_node.update_recursive(reward, self.root)
+
+    def _score_code_step_v1(self, node, new_node, parser_result, step_result, observation) -> None:
+        """score_version "v1" (default): the assert-consistency-score rules,
+        unchanged."""
+        if True:
             # "No valid Python code found in the response." does not contain
             # the word "error", so it previously fell through as
             # code_ran_ok=True -- a truncated/unparsable step was silently
@@ -188,15 +229,6 @@ class MCTS(BS):
                         # against the eventual conclusion -- score
                         # immediately, as before.
                         new_node.update_recursive(self.config.positive_reward, self.root)
-        else:
-            new_node.state["text"] = step_result
-
-        if not new_node.is_terminal and new_node.depth > self.config.max_depth:
-            new_node.is_terminal = True
-            new_node.state["final_answer"] = TOO_MANY_STEPS
-            self.eval_final_answer(new_node)
-
-        node.children.append(new_node)
 
     def eval_final_answer(self, node: Type[MCTSNode]) -> None:
         if node.state["final_answer"] in [NO_VALID_CHILD, TOO_MANY_STEPS, TOO_MANY_CODE_ERRORS]:
@@ -205,6 +237,16 @@ class MCTS(BS):
             return
 
         self._score_pending_assert_verdicts(node)
+        if getattr(self.config, "score_version", "v1") == "v2":
+            ancestors = []
+            a = node.parent
+            while a is not None:
+                ancestors.append(a.state)
+                a = a.parent
+            penalty = score_leaf(node.state.get("final_answer", ""), node.state.get("text", ""),
+                                 ancestors, self.config.negative_reward)
+            if penalty is not None:
+                node.update_recursive(penalty, self.root)
 
         if self.config.is_sampling:
             final_answer = node.state["final_answer"]

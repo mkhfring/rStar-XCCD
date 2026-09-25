@@ -208,3 +208,85 @@ therefore never compares against `self.ground_truth`.
   "All Python test cases passed.", and long output.
 
 No MCTS run had been executed against this branch at the time of writing.
+
+---
+
+# Scoring review, 2026-09-24 (branch `rl-self-improvement`)
+
+## What is actually running
+
+This branch's `mcts.py` still carries the **assert-consistency-score** rules
+(section 2 above), not the exec-outcome-scoring rework (section 3 is on its own
+branch and was never merged here): `"error" not in observation.lower()`, a
+failed assert tags the step `non-clone`, a passing self-written assert tags it
+`clone`, and a step that runs cleanly with no output (e.g. only
+`import subprocess`) earns `positive_reward`.
+
+## Two findings that matter more than the step rules
+
+1. **Search scores cannot steer an eval run.** Eval configs use
+   `iterations: 2 == n_generate_sample: 2`; the unvisited-first guard in
+   `select_child()` spends both rollouts on the two root children. Step
+   scoring only matters in mining configs (iterations 3-12).
+2. **The published baselines and every SFT checkpoint number use different
+   aggregation rules.** FINAL_FOR_CLCCD.md (rust 0.8739, java 0.9454) was scored
+   before 2026-09-12 with the exec-signature override applied unconditionally;
+   all later `_result` files apply it only to trees without a leaf vote. Same
+   baseline trees under the current rule: **rust 0.7952, java 0.9163**.
+   `rescore_runs.py` re-scores any run under all rules:
+
+   | full CLCCD F1 | old rule | current rule |
+   |---|---|---|
+   | base rust | 0.8739 | 0.7952 |
+   | codenet-all-v1 rust | 0.6354 | 0.8498 |
+   | base java | 0.9443 | 0.9163 |
+   | codenet-all-v1 java | 0.8594 | 0.9425 |
+
+   Under ONE rule, CodeNet SFT improved on the base model (+0.055 rust,
+   +0.026 java) -- the "flat to worse" conclusion compared across rules.
+
+## Aggregation: "tested non-clone" signal
+
+The prompt tells the model to skip testing and `print("not code clones")` when
+it judges a pair non-clone; it writes tests only when it leans clone. On
+base-model rl_train rust trees, a non-clone leaf whose path ran any real test
+is ground-truth CLONE 91-96% of the time (held-out: 29/29); print-shortcut
+non-clone leaves are right 93-94%. Counting tested non-clone leaves as clone
+votes (`rescore_runs.py`, rule `tested`) chosen on rl_train, reported on
+held-out: base rust rl_heldout 0.8039 -> **0.8909**, rl_heldout_strict
+0.8000 -> **0.8785**, java rl_heldout 0.9080 -> **0.9634**.
+It is MODEL-DEPENDENT: fine-tuned checkpoints test non-clones too, and the
+rule lowers their F1 (codenet-all-v1 rust 0.8498 -> 0.7960). Always use
+`rescore_runs.py --calibrate` (rule chosen per run on its rl_train subset,
+reported on rl_heldout). Calibrated held-out: base still ahead
+(rust rl_heldout 0.891 vs codenet-all-v1 0.844; java 0.963 vs 0.952).
+The default of `evaluate_clone_results.predict_label` is NOT changed.
+
+## score_version v2 (opt-in; default v1 unchanged, byte-identical block)
+
+`rstar_deepthink/agents/step_scoring.py`, wired via `config.score_version`
+(+ `code2_bonus`); example config
+`config/my_test_mcts_qwen3_4b_depth_16_1gpu_sampling_rl_mining_scorev2.yaml`.
+Rules: outcome from exception pattern, not the "error" substring; empty /
+label-only output and verdict echo -> 0 (v1 paid +1); a failed or passing
+assert is evidence ONLY if the program actually ran Code 2 (otherwise the
+model's guessed literal decides it); running Code 2 successfully earns
++code2_bonus; a clone leaf claiming tests with no output anywhere gets
+negative_reward. None of it reads the ground truth.
+
+Offline replay (`replay_step_scoring.py`, AUC of a step's score for "its
+subtree is mostly right"; GT used only to evaluate):
+
+| trees | v1 all | v2 all | v1 clone-q | v2 clone-q |
+|---|---|---|---|---|
+| base rust rl_train (eval) | 0.546 | 0.484 | 0.352 | 0.446 |
+| Track A rust hard mining | 0.451 | 0.582 | 0.432 | 0.614 |
+| CodeNet rust mining | 0.481 | 0.544 | 0.375 | 0.566 |
+| base java rl_train (eval) | 0.519 | 0.500 | 0.481 | 0.580 |
+
+v1 is anti-predictive on clone questions (it penalises the no-code /
+failed-assert branches that are mostly clones -- the exec-signature effect).
+v2 fixes the direction on clone questions and on mining trees, but every
+step-level score stays near chance: step rewards are a weak lever here.
+Making crash/no-code neutral as well ("v2-nopenalty") was not consistently
+better and is not implemented. Use v2 for mining; do not expect eval gains.

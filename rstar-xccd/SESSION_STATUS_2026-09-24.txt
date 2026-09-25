@@ -1,0 +1,410 @@
+================================================================================
+ Session status: CodeNet full-CLCCD results + "hard CodeNet" SFT track
+ Written 2026-09-24 (point-in-time snapshot -- check `squeue -u khajezad` /
+ `sacct -j <id>` for current truth; this file exists so a lost connection or
+ a new session can pick this thread back up without re-deriving context).
+ Follows on from SESSION_STATUS_2026-09-23.txt (previous session) and
+ SFT_DATA_PROCESS.txt section 8 (the detailed methodology writeup for
+ everything in part B below -- this file is the status/job-tracker
+ companion to that, not a replacement).
+================================================================================
+
+--------------------------------------------------------------------------------
+PASTE THIS INTO A NEW CLAUDE CODE SESSION TO GET AN UPDATE
+--------------------------------------------------------------------------------
+Read SESSION_STATUS_2026-09-24.txt in
+/lustre06/project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD/rstar-xccd
+(and SFT_DATA_PROCESS.txt section 8, ESPECIALLY (f) and (g), for full
+methodology) and give me a status update: check squeue for all job IDs
+listed in part F, and report the two pending full-CLCCD evals (part F) once
+they finish (grep "F1 score" on their _result files).
+--------------------------------------------------------------------------------
+NOTE (2026-09-24 evening): this new session was started to pick up on
+Claude Code's own client version -- the CLI on this machine was updated
+2026-09-24 (npm-global 2.1.261 -> native install 2.1.282, via `claude
+install`; a ~/.bashrc PATH-precedence fix was also added so the native
+install wins over the old npm-global one going forward) specifically to
+unlock the newly-released Opus 5.5 model in `/model`. This is unrelated to
+the rStar-XCCD project itself -- purely a client-tooling note so a new
+session understands why it's starting fresh. No project files were touched
+by that change.
+--------------------------------------------------------------------------------
+[SUPERSEDED -- parts A-D below are the ORIGINAL version of this file,
+ written before the binary-blob bug (SFT_DATA_PROCESS.txt section 8g) was
+ found. Left as-is for history. PART E and PART F at the end of this file
+ are current -- read those first.]
+--------------------------------------------------------------------------------
+
+
+PART A -- FULL-CLCCD RESULTS FROM LAST SESSION (2026-09-22/23 overnight jobs), FINAL
+--------------------------------------------------------------------------------
+Base Qwen3-4B (no fine-tuning), full CLCCD test set -- FINAL_FOR_CLCCD.md:
+  java (1800q): F1 0.9454 (P=1.0000, R=0.8964)
+  rust (1200q): F1 0.8739 (P=0.9676, R=0.7967)
+
+codenet-all-v1 (SFT on ALL 2000/2000 CodeNet questions per language, clean
+-- no CLCCD leakage), full CLCCD, COMPLETE:
+  java: F1 0.9436 (P=0.9988, R=0.8942)  vs base: -0.0018 (flat)
+  rust: F1 0.8498 (P=0.9431, R=0.7733)  vs base: -0.0241 (worse)
+  CONCLUSION: training on the full undifferentiated CodeNet pool did NOT
+  beat the base model -- flat on java, a real regression on rust. This is
+  the finding that motivated part B below (concentrate training on
+  questions the model actually gets wrong instead of diluting with easy
+  ones).
+
+codenet-rust-only-v1 (SFT on rust-only CodeNet, 3134 ex), full CLCCD rust,
+job 3757227 -- STILL RUNNING as of this writing (see part C). Purpose:
+compare against codenet-all-v1's rust number (0.8498) to see whether mixing
+java into training helps or hurts rust specifically.
+
+hard-v1 TAINTED (leakage-contaminated -- 12/1200 rust CLCCD questions were
+in this checkpoint's own SFT training data; user explicitly asked for this
+number anyway as an upper bound), full CLCCD:
+  rust (job 3754532): F1 0.8983 -- COMPLETE. DO NOT cite as a clean
+    generalization number.
+  java (job 3765991): STILL RUNNING as of this writing (see part C).
+
+
+PART B -- "HARD CODENET" SFT TRACK (this session's main thread)
+--------------------------------------------------------------------------------
+Full methodology and exact commands: SFT_DATA_PROCESS.txt section 8. Short
+version below; DO NOT re-derive this, read section 8 if any number here
+needs re-verification.
+
+1. DEFINED "hard" = a CodeNet-mining question where Qwen3-4B's own
+   aggregate MCTS verdict (build_failed_dataset.py, same predict_label/
+   clone-on-disagreement aggregation used for every CLCCD F1 in this
+   project) disagreed with ground truth, applied to the EXISTING
+   codenet-mining-v1 trees (jobs 3622157 java / 3622171 rust) -- no new
+   eval run needed.
+     java: 63/2000 hard    -> eval_data/failed_codenet_python_java.jsonl
+     rust: 93/2000 hard    -> eval_data/failed_codenet_python_rust.jsonl
+
+2. SANITY CHECK: only 2/63 java, 1/93 rust of these already had a safe
+   leaf in the existing mining data -- confirmed re-mining was required,
+   not just filtering.
+
+3. RE-MINED both languages at STANDARD sampling budget (n_generate_sample/
+   best_of=4, iterations=3 -- same as every other Qwen3-4B mining job).
+   Branch: rl-mining-hard-codenet-v1. Jobs 3870570-3870573 (java+rust,
+   both accounts). IMPORTANT: the twin-guard did NOT fire -- both accounts
+   ran full independent passes per language instead of one real + one
+   no-op. Harmless for 1-GPU mining (just gave 2x pooled leaf diversity
+   per question, same question-level outcome both times), but flagged
+   because it did NOT repeat for the more expensive SFT jobs below.
+   YIELD (pooling both accidental duplicate runs):
+     java: 23/63 (36.5%) recovered, 58 safe leaves
+     rust: 11/93 (11.8%) recovered, 46 safe leaves
+   SFT datasets built:
+     eval_data/sft_hard_codenet_java_only.jsonl   (58 ex)
+     eval_data/sft_hard_codenet_rust_only.jsonl   (46 ex)
+     eval_data/sft_hard_codenet_java_rust.jsonl   (104 ex, both langs)
+
+4. LOOKED CLOSER AT THE RUST YIELD: the 46 "examples" are only 11 UNIQUE
+   questions (leaves per question: 6,6,6,6,4,4,4,4,2,2,2 -- heavy
+   near-duplication), vs java's 58 examples / 23 unique questions. 82/93
+   (88%) of rust hard questions still have ZERO safe leaves even after
+   re-mining -- looks like a real capability gap on hard rust clones, not
+   just a sampling-luck problem.
+
+5. SFT JOBS submitted with the SAME small-batch recipe as the original
+   hard-v1/hard-java-v1 pilots (per_device_train_batch_size=2 x 4 GPUs x
+   grad_accum=1, effective batch 8, 4 epochs -- NOT the Track-B
+   effective-batch-64 recipe, which was confirmed on datasets this size
+   (job 3632724, prior session) to collapse to ~2 real optimizer steps
+   despite a clean-looking COMPLETED exit):
+     3880506  java-only (58 ex)   -> COMPLETED in 9 min.
+              Checkpoint: sft_checkpoints/qwen3-4b-hard-codenet-java-only-v1
+     3880507  rust-only (46 ex)   -> CANCELLED (still PENDING, 0 compute
+              spent) once the rust weakness in step 4 was flagged --
+              training on data about to be superseded would be wasted.
+     3880508  java+rust (104 ex)  -> CANCELLED (same reason; combined
+              dataset includes the weak rust half).
+   Deliberately did NOT submit -fard twins for these 3 SFT jobs (unlike
+   the mining jobs) -- twin-guard failure would be far costlier on a
+   4x A100 training job than on 1x A100 mining.
+
+6. WIDE RE-MINING FOR RUST, in flight now: before concluding the 82
+   unrecovered rust questions are unreachable, trying a wider search
+   budget on the SAME 93 questions (eval_data/failed_codenet_python_
+   rust.jsonl). New config config/my_test_mcts_qwen3_4b_depth_16_1gpu_
+   sampling_rl_mining_wide_rust.yaml: n_generate_sample/best_of 4->8,
+   iterations 3->12. NOT a single-parameter bump -- two things forced
+   widening best_of and iterations together with n_generate_sample:
+     a) vLLM requires best_of >= n (n=n_generate_sample) -- raising
+        n_generate_sample alone would crash at generation time.
+     b) MCTS depth-guard (methodology.tex Sec. mcts_search): clearing one
+        tree level needs >= n_generate_sample rollouts. The STANDARD
+        config already had iterations(3) < n_generate_sample(4) -- the
+        guard was ALREADY the binding depth constraint, so the standard
+        rust re-mining in step 3 likely never explored past depth 1.
+        iterations=12 clears one level (8 rollouts) with 4 left over for
+        a second level.
+   Branch: rl-mining-hard-codenet-wide-v1. Jobs 3881191 (khajezad) /
+   3881193 (fard) -- see part C for live status.
+
+
+PART C -- JOB TRACKER (check with squeue -u khajezad / sacct -j <id> --format=...)
+--------------------------------------------------------------------------------
+As of 2026-09-24, last checked:
+
+  RUNNING:
+  3881191  q3-4b-rl-mining-hard-codenet-rust-wide       def-khajezad_gpu
+           Wide re-mining, rust hard-codenet subset (93 q), see part B.6.
+           24 min elapsed / 6h budget as of last check.
+  3765991  q3-4b-eval-clccd-java-hard-v1-TAINTED         def-khajezad_gpu
+           TAINTED full-CLCCD java eval, hard-v1 checkpoint (part A).
+           ~1 day elapsed / 30h (1-06:00:00) budget -- getting close, watch
+           for TIMEOUT; if it times out, resume WITHOUT --no-resume (same
+           code version throughout, safe to resume).
+  3757227  q3-4b-eval-clccd-rust-codenet-rust-only-v1    def-khajezad_gpu
+           FULL CLCCD rust, codenet-rust-only-v1 checkpoint (part A).
+           ~1 day 2.5h elapsed / 48h (2-00:00:00) budget.
+
+  PENDING (twin, harmless):
+  3881193  q3-4b-rl-mining-hard-codenet-rust-wide-fard   def-fard_gpu
+           Twin of 3881191 -- may run a genuine duplicate pass again (the
+           twin-guard failed once already this session, part B.3); harmless
+           for a 1-GPU mining job either way.
+
+  COMPLETED THIS SESSION:
+  3870570-3870573  standard-budget hard-codenet mining, java+rust (part B.3)
+  3880506          SFT java-only hard-codenet (part B.5)
+
+  CANCELLED THIS SESSION (deliberately, 0 compute spent):
+  3880507, 3880508 (part B.5 -- superseded by the rust weakness finding)
+
+
+PART D -- WHAT TO DO NEXT ONCE THINGS FINISH
+--------------------------------------------------------------------------------
+  a) Once 3881191/3881193 (rust wide re-mining) complete, score the
+     output(s) the same way as the standard run:
+       python score_rl_rollouts.py <khajezad_output> [<fard_output>] \
+         --emit_sft eval_data/sft_hard_codenet_rust_only_wide.jsonl
+     Compare safe_questions/93 against the standard run's 11/93 (11.8%).
+     If it's meaningfully higher, decide whether to use the wide run ALONE
+     or POOL it with the standard run's leaves (same pattern as part B.3's
+     accidental pooling) for the final rust-only dataset.
+  b) Rebuild eval_data/sft_hard_codenet_java_rust.jsonl (combined) using
+     java's existing sft_hard_codenet_java_only.jsonl + whichever rust
+     dataset wins in (a).
+  c) Re-run train/build_full_prompts.py on the (possibly-updated) rust-only
+     and combined datasets, then resubmit the rust-only and java+rust SFT
+     jobs (launchers already exist: Qwen3/run_sft_hard_codenet_rust_only_
+     v1_qwen3_4b_4gpu.sh and .../run_sft_hard_codenet_java_rust_v1_
+     qwen3_4b_4gpu.sh -- just re-point SFT_DATA/QAF if the filename
+     changes, e.g. to the _wide suffix).
+  d) Once all three hard-codenet checkpoints exist (java-only done;
+     rust-only and java+rust pending (a)-(c)), evaluate each on the FULL
+     CLCCD test files (valid per Track B leakage rules, same as
+     codenet-all-v1) and compare against:
+       - base Qwen3-4B (java 0.9454, rust 0.8739)
+       - codenet-all-v1 (java 0.9436, rust 0.8498)
+     to answer this session's driving question: does concentrating SFT on
+     genuinely-hard questions beat training on the full undifferentiated
+     pool?
+  e) Score qwen3-4b-hard-v1's TAINTED full-java run (3765991) once done --
+     report only with the leakage caveat, never as a standalone
+     generalization claim (part A).
+  f) Score codenet-rust-only-v1's full-CLCCD-rust run (3757227) once done
+     -- compare against codenet-all-v1's rust number (0.8498) per part A.
+================================================================================
+
+
+PART E -- WHAT HAPPENED SINCE PART D (2026-09-24 afternoon/evening)
+--------------------------------------------------------------------------------
+1. Part D (a)-(c) done: wide re-mining (3881191) scored, pooled with the
+   standard-budget runs (17/93 unique questions recovered, 110 safe leaves),
+   rust-only and combined SFT datasets rebuilt, both SFT jobs resubmitted
+   and COMPLETED:
+     3926242  sft-hard-codenet-rust-only-v1   COMPLETED 11m41s
+              -> sft_checkpoints/qwen3-4b-hard-codenet-rust-only-v1
+     3926245  sft-hard-codenet-java-rust-v1   COMPLETED 13m20s
+              -> sft_checkpoints/qwen3-4b-hard-codenet-java-rust-v1
+   Full detail: SFT_DATA_PROCESS.txt section 8(f).
+
+2. Eval launcher set up and submitted for the earlier java-only checkpoint
+   (SFT_DATA_PROCESS.txt section 8(e)'s 3880506 checkpoint), mirroring the
+   codenet-all-v1 java eval launcher (Track-B data, so full-CLCCD-eligible,
+   no heldout-subset needed):
+     Qwen3/run_eval_clccd_java_hard_codenet_java_only_v1_qwen3_4b_2gpu.sh (+_fard.sh)
+     3921168 (khajezad) RUNNING; 3921171 (fard twin) was cancelled manually
+     while still PENDING once 3921168 started (twin-guard would have done
+     this itself on next dequeue, cancelled early to free the fard
+     allocation sooner).
+
+3. MAJOR FINDING: investigated why rust hard-codenet recovery stayed so low
+   even after the wide re-mining -- found 73/93 hard rust questions never
+   produced a single MCTS tree node (zero rollouts, not wrong answers).
+   Root cause: 72 of those 73 are CodeNet "rust" submissions that embed a
+   base64-encoded PRECOMPILED BINARY (a cargo-atcoder AtCoder-judge trick)
+   as a string constant instead of readable source -- question text runs
+   150k-392k characters, blowing past max_model_len (16384) before
+   generation can start. Full detail + all numbers: SFT_DATA_PROCESS.txt
+   section 8(g). Headline results:
+     - Full CodeNet pools affected: rust 83/2000 (4.2%), java 15/2000 (0.8%)
+     - Published CLCCD TEST files (source of every existing F1 number):
+       ZERO matches -- this bug never touched a reported eval number,
+       CodeNet-mining/training side only.
+     - Cleaned pools written (originals untouched):
+         eval_data/codenet_train_python_rust_clean.jsonl  (1917/2000)
+         eval_data/codenet_train_python_java_clean.jsonl  (1985/2000)
+       via new script filter_codenet_binary_blobs.py.
+     - Hard sets re-derived on the clean pools (same existing mining trees,
+       no new GPU job): eval_data/failed_codenet_python_{java,rust}_clean.jsonl
+         java: 58 hard (was 63)
+         rust: 20 hard (was 93 -- the other 73 were blob garbage)
+     - The 17 rust questions already in sft_hard_codenet_rust_only.jsonl
+       (item 1 above) are ALL genuine/clean -- that dataset and both new
+       checkpoints are valid as-is, not invalidated by this bug.
+     - CORRECTED rust hard-question recovery: 17/20 = 85% (not 18.3%).
+       Only 3 truly unrecovered: indices 1113, 1492, 1549.
+     - CONCLUSION: the apparent "rust is a harder language for hard-codenet
+       SFT" gap was mostly a CodeNet data-quality artifact, not a Qwen3-4B
+       reasoning deficit.
+
+
+PART F -- CURRENT JOB TRACKER + NEXT STEPS (as of 2026-09-24 ~20:45)
+--------------------------------------------------------------------------------
+  RUNNING:
+  3757227  q3-4b-eval-clccd-rust-codenet-rust-only-v1   def-khajezad_gpu
+           Full CLCCD rust, codenet-rust-only-v1 checkpoint (part A).
+           ~1d20h elapsed / 48h budget -- CLOSE TO ITS LIMIT, check sacct
+           state FIRST thing in the new session.
+           CAUTION: eval_data/test_python_rust_CLCCD_depth_16.jsonl.mcts.
+           qwen3-4b-codenet-rust-only-v1.assert-consistency-score.
+           def-khajezad_gpu.20260923004027.jsonl_result already exists on
+           disk (F1 0.7692) despite the job still showing RUNNING in sacct
+           -- this looks like an early/partial write from right after the
+           job started (filename timestamp ~5min after job launch), NOT a
+           final number. DO NOT report 0.7692 as this checkpoint's final
+           rust F1 until `sacct -j 3757227` shows COMPLETED -- re-check the
+           _result file's contents fresh at that point (it may be
+           overwritten in place, or the F1 may change once all 1200
+           questions are judged instead of whatever partial subset this was
+           computed over).
+  3921168  q3-4b-eval-clccd-java-hard-codenet-java-only-v1   def-khajezad_gpu
+           Full CLCCD java, hard-codenet-java-only-v1 checkpoint (part E.2).
+           ~4.5h elapsed / 48h budget, still running as of last check.
+
+  COMPLETED, NOT YET EVALUATED:
+    sft_checkpoints/qwen3-4b-hard-codenet-rust-only-v1   (job 3926242)
+    sft_checkpoints/qwen3-4b-hard-codenet-java-rust-v1   (job 3926245)
+
+  NEXT STEPS, IN ORDER:
+  1. Watch 3757227 -- if it times out before finishing, resume WITHOUT
+     --no-resume (same code version throughout, safe to resume; do NOT
+     restart with --no-resume, that would discard progress).
+  2. Once 3921168 finishes: grep "F1 score" its _result file, compare
+     against base java (0.9454) and codenet-all-v1 java (0.9436).
+  3. Set up + submit full-CLCCD eval launchers for the two NEW checkpoints
+     from part E.1 (qwen3-4b-hard-codenet-rust-only-v1 on rust,
+     qwen3-4b-hard-codenet-java-rust-v1 on BOTH java and rust) -- mirror
+     the java-only launcher from part E.2, just swap MODEL/QAF. NOT YET
+     DONE, no launcher scripts exist for these two yet.
+  4. Once all hard-codenet full-CLCCD numbers are in (java-only, rust-only,
+     java-rust-combined), compare the full set against:
+       - base Qwen3-4B (java 0.9454, rust 0.8739)
+       - codenet-all-v1 (java 0.9436, rust 0.8498)
+       - codenet-rust-only-v1 (pending, job 3757227)
+     to answer the driving question: does concentrating SFT on genuinely-
+     hard questions beat the full undifferentiated pool?
+  5. OPEN, NOT STARTED: a clean re-run of codenet-all-v1 / codenet-rust-
+     only-v1 (fresh mining + training) on the *_clean.jsonl pools from
+     part E.3, to see whether removing the binary-blob noise from the
+     FULL-SCALE (not just hard-subset) training data changes their
+     flat-to-worse full-CLCCD numbers. Nothing running towards this yet.
+  6. OPEN, NOT STARTED: any action on the 3 still-genuinely-unrecovered
+     hard rust questions (1113, 1492, 1549) -- e.g. teacher distillation
+     from a stronger model (Qwen2.5-Coder-7B-Instruct / Qwen3-8B) on just
+     these 3, discussed as an idea but not attempted.
+================================================================================
+
+
+PART G -- UPDATE 2026-09-24 ~21:15 (part F step 3 DONE)
+--------------------------------------------------------------------------------
+  Progress check at ~21:00: 3757227 (rust, codenet-rust-only-v1) at
+  1108/1200, ~25 q/h, ~3.6h left of its 48h -- may TIME OUT just short.
+  3921168 (java, hard-codenet-java-only-v1) at 170/1800, ~35 q/h -- WILL
+  likely time out at ~1680/1800 (~09-26 16:20); resume needed. Both
+  launchers pass --no-resume, so a resume = copy of the launcher with that
+  line removed. CORRECTION to part F: the 0.7692 rust _result file was
+  written 09-23 22:30 over only 542 instances (partial, mid-run), not ~5 min
+  after launch. main.py only writes _result at the end of a full run.
+
+  Part F step 3 -- full-CLCCD evals for the two new checkpoints, SUBMITTED
+  (launchers in Qwen3/, mirroring the java-only launcher, but with 72h
+  time and WITHOUT --no-resume so a plain resubmit resumes):
+    3940133 / 3940134(fard)  rust, hard-codenet-rust-only-v1
+        run_eval_clccd_rust_hard_codenet_rust_only_v1_qwen3_4b_2gpu{,_fard}.sh
+    3940136 / 3940137(fard)  java, hard-codenet-java-rust-v1
+        run_eval_clccd_java_hard_codenet_java_rust_v1_qwen3_4b_2gpu{,_fard}.sh
+    3940138 / 3940139(fard)  rust, hard-codenet-java-rust-v1
+        run_eval_clccd_rust_hard_codenet_java_rust_v1_qwen3_4b_2gpu{,_fard}.sh
+  Twin-guard should cancel/no-op one of each pair; CHECK that it did (it
+  failed once in part B.3 -- if both of a pair run, scancel the fard one).
+================================================================================
+
+
+PART H -- 2026-09-24 late evening: SFT/RL data work (SFT_DATA_PROCESS.txt section 9)
+--------------------------------------------------------------------------------
+  Read section 9 first. Short version:
+  - CodeNet rust recall is already 0.983 -> CodeNet SFT cannot fix the CLCCD
+    rust recall gap (0.797); the hard CodeNet sets are 2 AOJ problems.
+  - Track A rl_heldout rust shares ALL Code-2 programs with rl_train ->
+    new strict split (build_rl_split_strict.py), base F1 there 0.8000.
+  - Preferred next run: Qwen3/run_sft_trackA_rust_v2_strict_qwen3_4b_4gpu.sh,
+    then Qwen3/run_eval_heldout_rust_trackA_rust_v2_strict_qwen3_4b_2gpu.sh
+    (+_fard); compare with base 0.8000 (R 0.6667).
+  - Harness rust_external_crates() false positives: documented, NOT fixed
+    (7 evals pending/running would become incomparable).
+  NOTHING NEW WAS SUBMITTED. 3940133-3940139 (part G) and 3757227/3921168
+  (part F) are unchanged by this work.
+================================================================================
+
+  UPDATE (Part H): SUBMITTED the suggested run --
+    3943747  q3-4b-sft-trackA-rust-v2-strict -> sft_checkpoints/qwen3-4b-trackA-rust-v2-strict
+    3943748 / 3943749(fard)  eval on rl_heldout_strict rust (110 q), both
+             --dependency=afterok:3943747; twin-guard keeps one. Compare the
+             _result F1 against base 0.8000 (P 1.0000, R 0.6667).
+
+PART I -- scoring review (MCTS_SEARCH_SCORING.md, "Scoring review, 2026-09-24")
+--------------------------------------------------------------------------------
+  !! Published baselines (0.8739 rust / 0.9454 java) used the pre-09-12
+  aggregation; all checkpoint _result files use the current one. Same rule:
+  base rust 0.7952 vs codenet-all-v1 0.8498; java 0.9163 vs 0.9425. Always
+  compare with rescore_runs.py (--calibrate for the model-dependent 'tested'
+  rule; calibrated held-out: base rust 0.891 / strict 0.879 / java 0.963).
+  For the Track A strict SFT eval (3943748/9), compare with base on
+  rl_heldout_strict: 0.8000 (current rule) and 0.8785 (calibrated).
+  score_version v2 added (opt-in, default v1 byte-identical) -- mining only.
+================================================================================
+
+  UPDATE (Part I): NEW-RULE CONFIRMATION RUNS SUBMITTED (fresh base Qwen3-4B trees)
+    3945722 / 3945737(fard)  rust, full CLCCD  Qwen3/run_eval_clccd_rust_base_newrule_qwen3_4b_2gpu{,_fard}.sh
+    3945738 / 3945744(fard)  java, full CLCCD  Qwen3/run_eval_clccd_java_base_newrule_qwen3_4b_2gpu{,_fard}.sh
+    Output: eval_data/test_python_{rust,java}_CLCCD_depth_16.jsonl.mcts.Qwen3-4B.newrule-tested-agg.<account>.<ts>.jsonl
+      _result                       = current rule (main.py, unchanged)
+      _result_NEWRULE_tested_agg    = old/current/NEW rule by split + rl_train-calibrated held-out
+    Predicted: rust rl_heldout 0.80 -> ~0.89, strict 0.80 -> ~0.88; java rl_heldout 0.91 -> ~0.96
+    (run-to-run spread about +-0.01; strict set is only 110 q). If a job times out: resubmit the
+    same script (resume on), then run rescore_runs.py by hand.
+
+
+PART J -- DOCUMENTATION INDEX + CURRENT JOB TRACKER (2026-09-24 ~23:40)
+--------------------------------------------------------------------------------
+  START HERE in a new session:
+    ../SESSION_CHANGELOG_2026-09-24.md       every change/finding/command/job of this session
+    ../METHODOLOGY_ADDITIONS_2026-09-24.tex  paper text drafts (blocks A-F, keyed to sections)
+    ../session_patches/2026-09-24/            exact diffs of modified tracked files
+                                              (+ pre-existing uncommitted edits, kept separate)
+  Nothing from this session is committed.
+
+  CORRECTION to parts H/I: SFT 3943747 FAILED in 10 s (launcher missing
+  venv activation; evals 3943748/9 auto-cancelled). All five v2 SFT
+  launchers fixed; resubmitted:
+    3945991  q3-4b-sft-trackA-rust-v2-strict
+    3945992 / 3945993(fard)  eval on rl_heldout_strict, afterok:3945991
+  Other jobs unchanged: 3757227, 3921168, 3940133-3940139 (fard copies
+  running), new-rule runs 3945722/3945737 (rust), 3945738/3945744 (java).
+================================================================================

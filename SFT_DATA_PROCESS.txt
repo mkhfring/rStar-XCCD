@@ -268,3 +268,121 @@ Track B; a decision on whether full SFT (current approach) or LoRA is
 preferred going forward -- this first run is full-parameter FSDP, matching
 the original rStar-Math recipe, not LoRA.
 ================================================================================
+
+9. PROCESS-LEVEL CURATION, TEACHER TRACES AND PREFERENCE DATA (added 2026-09-24,
+   Claude Code session; no API calls -- all review/writing done in-session)
+--------------------------------------------------------------------------------
+GOAL: improve Qwen3-4B on python<->rust. Every step below is reproducible from
+the scripts named; all hand-made artefacts live in eval_data/claude_review/.
+
+a) SAFE FILTER HOLES (score_rl_rollouts.py, now STRICT by default; --legacy
+   reproduces section 4 exactly, verified: 110 rust / 58 java leaves):
+   - exec_outcome_of() maps an EMPTY observation to None ("never tried code"),
+     so a leaf whose only code step was `import subprocess` counted as pure
+     reasoning. 69/168 leaves of the v1 hard-codenet sets were like this.
+   - observations made only of print labels ("result.stdout: ") = empty too.
+   - answers that claim "passes / verified / confirming / produces the same
+     output" with no output at all (claims_unrun_tests).
+   - a clone concluded from an input on which the two programs DIVERGE
+     (divergent_evidence; needs diff_test_pairs.py output).
+   - print-only "tests" on a clone answer; near-verbatim copied Code-2 summary.
+   Checks live in trace_checks.py and are shared by the SFT filter, the reward
+   (process_reward.py) and the preference builder. Tiers: A verified, B weak,
+   X dropped. --max_per_question caps near-duplicate leaves.
+
+b) DIFFERENTIAL TESTING (diff_test_pairs.py, harness_exec.py): runs Code 1 and
+   Code 2 on the SAME inputs (model-written inputs, proconio-derived random
+   inputs from gen_inputs_proconio.py, and official AtCoder sample inputs
+   written into eval_data/claude_review/manual_inputs_*.json).
+   - Offline only: proconio/itertools/... are linked from a cargo-built
+     AtCoder-2020 crate set (eval_data/claude_review/atcoder_crates, built on
+     the login node). The MCTS harness itself is unchanged.
+   - Track A rust hard (83): 60 clone pairs agree on every valid input;
+     every clone-label "disagreement" inspected was an invalid input
+     (n not matching list length, k=0, w_i > 10^4). CodeNet 1549 is a real
+     edge-case divergence (Python prints 0 for n=1) -> treated as
+     label-ambiguous, not taught.
+   - Untestable: 417/1003 (Python 2), 477 (fractions.gcd, gone in 3.9).
+
+c) HARNESS BUG, NOT FIXED (would change eval behaviour mid-run):
+   python_tool.rust_external_crates() treats `use place` inside a COMMENT,
+   local `mod math`, `::std::io` paths as external crates and refuses to run
+   Code 2. 5/20 CodeNet hard rust questions compile fine with plain rustc
+   (incl. 1492, one of the 3 "unrecovered"). Fix before the NEXT eval series
+   (strip comments, subtract locally-declared `mod` names, ignore `::std`),
+   and re-run baselines with it so numbers stay comparable.
+
+d) KEY FINDING -- WHY CODENET SFT DOES NOT HELP RUST: on the (clean) CodeNet
+   rust pool Qwen3-4B's recall is already 0.983 (17 FN / 1000 clones); on
+   CLCCD rust it is 0.797. The CodeNet pool does not contain the pairs the
+   model misses, and the whole CodeNet hard set is only TWO AOJ problems
+   (ALDS1_2_B selection sort, ALDS1_4_D allocation) for both rust and java.
+   The CLCCD-distribution weakness lives in Track A: rl_train rust has 83
+   failures, 81 of them false negatives; in the baseline trees only 34/240
+   rl_train clone questions have a verified (tier-A) correct leaf.
+   Observed FN mechanisms: "Rust has more complex structures -> different",
+   and trusting a self-written Python assert whose expected value the model
+   guessed (it never runs Code 2).
+
+e) TRACK A SPLIT LEAK (build_rl_split.py splits by the PYTHON problem only):
+   240/240 rl_heldout rust records (69/360 java) have their exact Code 2 in
+   rl_train (CLCCD reuses each Code-2 program in its clone pair + non-clone
+   derangements). New build_rl_split_strict.py makes BOTH sides' problems
+   disjoint: rust rl_train_strict 830 / rl_heldout_strict 110 (60 clone,
+   50 non-clone) / 260 dropped; check_leakage.py: 0 exact, 0 near-dup >=0.95.
+   Base Qwen3-4B (baseline trees, no GPU): rl_heldout rust F1 0.8039
+   (P 0.9762 R 0.6833); rl_heldout_strict F1 0.8000 (P 1.0000 R 0.6667).
+
+f) TEACHER + REPAIR TRACES (build_teacher_traces.py). Analyses were written
+   by hand after reading both programs (teacher_analyses_*.json); inputs are
+   verified-matching (official samples first); the <output> block is ALWAYS
+   the real harness observation (harness_exec.harness_observation). Two
+   code styles: run_both (python3 candidate_code.py vs ./candidate_code2 --
+   the harness compiles Code 2 when a step mentions it) and python_only
+   (Code 2 not runnable in the harness; expected outputs were verified
+   offline). A trace is kept only if every case prints True.
+   - Track A rust: 57 teacher traces (37 run_both, 20 python_only).
+   - CodeNet rust: 1113, 1492 teacher; 4 repairs (225 x2, 673, 1383) that keep
+     the model's own analysis and answer and replace only the empty code step.
+
+g) MANUAL LEAF REVIEW (leaf_review_*.jsonl, verdict + reason per leaf):
+   dropped for wrong problem descriptions (1215, 1466, 709, 1048, 1312),
+   tests of self-written re-implementations (1177 0.3.2.1.3.1, 709), false
+   facts ("Rust reads command-line args", "prints the list twice"),
+   contradictory Code-2 accounts (java 1794, 3 leaves = 3 different wrong
+   programs), fabricated evidence (1416 0.7.2.1 runs python3 with no code).
+
+h) DATASETS (all with origin/tier fields; build_full_prompts.py unchanged):
+   eval_data/sft_trackA_rust_v2.jsonl         154 (77 clone / 77 non-clone):
+       57 teacher + 5 reviewed hard leaves + 18 reviewed on-policy clone
+       leaves + 74 on-policy tier-A non-clone leaves (balance). rl_train only.
+       Eval ONLY on rl_heldout (caveat e).
+   eval_data/sft_trackA_rust_v2_strict.jsonl  130 (65/65), rl_train_strict
+       only (47 teacher). Eval ONLY on rl_heldout_strict. PREFERRED.
+   eval_data/sft_hard_codenet_rust_only_v2.jsonl  22 (13 clone/9 non-clone)
+   eval_data/sft_hard_codenet_java_only_v2.jsonl  23
+   eval_data/sft_hard_codenet_java_rust_v2.jsonl  45
+       Track B, full-CLCCD-evaluable; check_leakage: 0 exact / 0 near-dup.
+
+i) RL-SIDE DATA (build_preference_data.py, process_reward.py):
+   reward = +1 verified correct, +0.5 correct-unverified, -0.5 correct but
+   process-flagged ("right for the wrong reason"), -1 wrong.
+   - ppm_pairs_*.json: step-level pairs in train/train_RM.py format (for
+     rStar's process preference model). Small so far (11-45 per set; 26/29
+     from the greedy baseline trees on rl_train / rl_train_strict) --
+     Qwen3/run_rstar_mcts_slurm_rl_mining_trackA_strict_rust_qwen3_4b.sh
+     (sampled mining over all 830 strict-train questions) is the job that
+     makes this useful. NOT submitted.
+   - dpo_pairs_*.jsonl: trajectory pairs (tree best-vs-worst, teacher vs the
+     model's most-visited wrong leaf, repaired vs original).
+
+j) LAUNCHERS (written, NOT submitted): Qwen3/run_sft_{trackA_rust_v2,
+   trackA_rust_v2_strict,hard_codenet_{rust_only,java_only,java_rust}_v2}
+   _qwen3_4b_4gpu.sh; Qwen3/run_eval_heldout_rust_trackA_rust_v2{,_strict}
+   _qwen3_4b_2gpu{,_fard}.sh; Qwen3/run_eval_clccd_*_hard_codenet_*_v2_
+   qwen3_4b_2gpu{,_fard}.sh (72h, resume enabled).
+
+k) CAVEATS: teacher traces are Claude-written (distillation, not
+   self-improvement) -- report them as a separate data source; check
+   Anthropic's usage terms for training on model outputs.
+================================================================================

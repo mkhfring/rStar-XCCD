@@ -1,0 +1,11 @@
+{
+ "python2_untestable": [
+  417,
+  1003
+ ],
+ "note": "Code 1 is Python 2 (xrange / raw_input / input() as eval); cannot run under python3",
+ "python39_incompatible": [
+  477
+ ],
+ "note2": "477: Code 1 uses fractions.gcd, removed in Python 3.9; crashes on valid inputs here"
+}

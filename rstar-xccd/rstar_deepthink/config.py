@@ -145,6 +145,13 @@ class BaseConfig:
     c_puct: float = field(
         default=2, metadata={"help": "weight of c_puct in mcts"}
     )
+    score_version: str = field(
+        default="v1", metadata={"help": "search-time step scoring: 'v1' = assert-consistency-score "
+                                         "(unchanged default), 'v2' = rstar_deepthink/agents/step_scoring.py"}
+    )
+    code2_bonus: float = field(
+        default=0.5, metadata={"help": "v2 only: extra reward for a step that actually ran Code 2"}
+    )
     is_sampling: bool = field(
         default=False, metadata={"help": "solution generation in mcts"}
     )

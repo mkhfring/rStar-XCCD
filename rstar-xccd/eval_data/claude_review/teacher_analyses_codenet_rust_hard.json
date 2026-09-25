@@ -1,0 +1,50 @@
+{
+ "225": {
+  "inputs": [
+   "6\n5 6 4 2 1 3\n",
+   "6\n5 2 4 6 1 3\n",
+   "1\n7\n",
+   "3\n3 2 1\n"
+  ]
+ },
+ "673": {
+  "inputs": [
+   "6\n5 6 4 2 1 3\n",
+   "6\n5 2 4 6 1 3\n",
+   "1\n7\n",
+   "3\n3 2 1\n"
+  ]
+ },
+ "1383": {
+  "inputs": [
+   "5 3\n8\n1\n7\n3\n9\n",
+   "4 2\n1\n2\n2\n6\n",
+   "1 1\n10000\n",
+   "3 5\n4\n4\n4\n"
+  ]
+ },
+ "1113": {
+  "inputs": [
+   "5 3\n8\n1\n7\n3\n9\n",
+   "4 2\n1\n2\n2\n6\n",
+   "1 1\n10000\n",
+   "3 5\n4\n4\n4\n"
+  ],
+  "c1": "Code 1 is a Python script that reads n and k and then n package weights (one per line). It binary-searches the smallest capacity P between max(w) and sum(w) such that the packages, loaded in order, fit into at most k trucks each carrying at most P, using a greedy check that starts a new truck whenever the running load would exceed P. It prints that minimum P.",
+  "c2": "Code 2 is a Rust program (ALDS1_4_D: Allocation) that reads n and k and the n weights. Its check(p) greedily loads k trucks of capacity p in order and returns how many packages fit; solve() binary-searches the smallest p in (0, 10^9] for which all n packages fit, and main prints it.",
+  "cmp": "Both programs compute the minimum truck capacity P that lets k trucks carry the n packages in order -- a binary search over P with the same greedy feasibility check. Code 1 counts trucks used and Code 2 counts packages loaded, and their search bounds differ, but both return the smallest feasible P. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both binary-search the minimum capacity P for which k trucks can carry all packages in order, using a greedy loading check; the search bounds and counters differ, but the two programs print the same results on the tested inputs."
+ },
+ "1492": {
+  "inputs": [
+   "5 3\n8\n1\n7\n3\n9\n",
+   "4 2\n1\n2\n2\n6\n",
+   "1 1\n10000\n",
+   "3 5\n4\n4\n4\n"
+  ],
+  "c1": "Code 1 is a Python script that reads n and k and then n weights (one per line). search_v(p) greedily loads trucks in order with capacity p and returns how many packages fit in k trucks; a binary search over p in [0, n*10000] finds the smallest p for which all n packages fit, which it prints.",
+  "c2": "Code 2 is a Rust program with a lot of scaffolding (debug-print macros, a BufReadInput reader, Quiz/Answer structs and traits) around a small core: Quiz::solve binary-searches the capacity p between 1 and 10000*n/k + 1, and Quiz::check greedily assigns the weights to at most k trucks of capacity p. It prints the smallest p for which the check succeeds.",
+  "cmp": "Stripping away Code 2's debug macros and input structs, both programs do the same thing: binary search on the truck capacity with a greedy in-order loading check, printing the minimum capacity that lets k trucks carry all n packages. They appear to be semantic clones. The sandbox cannot run Code 2 (its imports are rejected), so I will run Code 1 on valid inputs and compare with the values Code 2 computes for them.",
+  "reason": "Beneath its debug macros and struct/trait scaffolding, Code 2 performs the same binary search over truck capacity with a greedy loading check as Code 1; both print the minimum capacity, and Code 1's outputs match Code 2's on the tested inputs."
+ }
+}

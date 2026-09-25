@@ -1,0 +1,678 @@
+{
+ "53": {
+  "c1": "Code 1 is a Python script that reads two integers n and m. It first checks a few special cases (using a randomized Miller-Rabin primality helper) that print 1. Otherwise it scans i upward from n and, at the first i that divides m, prints m // i. The smallest divisor i of m with i >= n gives the largest d = m // i such that m // d >= n, so the script prints the largest divisor d of m with m / d >= n -- the maximum possible gcd of n positive integers that sum to m.",
+  "c2": "Code 2 is a Rust program that reads n and m with the proconio input! macro. If n divides m it prints m / n directly. It trial-divides m to see whether m has any factor up to sqrt(m); if it has none (m is prime) it prints 1. Otherwise it starts at v = m / n and decrements v until v divides m and m / v >= n, then prints v -- again the largest divisor d of m with m / d >= n.",
+  "cmp": "Both programs read the same two integers and print the same quantity: the largest divisor d of m such that m can be split into n parts that are all multiples of d. Code 1 searches from the co-factor side (smallest divisor >= n) and Code 2 searches downward from m / n, and the primality shortcuts in each only cover cases where the answer is 1. The input format and the single-integer output match, so they appear to be semantic clones. Code 2 uses the proconio crate and cannot be run here, so I will run Code 1 on valid inputs and compare with the value Code 2 computes for each.",
+  "reason": "Both programs compute the largest divisor d of m with m / d >= n (the maximum gcd of n positive integers summing to m); they only differ in search direction and special-case shortcuts, and Code 1's outputs match Code 2's on the tested inputs.",
+  "inputs": [
+   "3 14\n",
+   "10 123\n",
+   "100000 1000000000\n",
+   "1 7\n"
+  ]
+ },
+ "67": {
+  "c1": "Code 1 is a Python script that reads N and M, then M integers A. If sum(A) > N it prints -1. Otherwise it splits each A_i into chunks of at most 24 and prints N minus the sum of the chunks; the chunks always add back up to A_i, so this is simply N - sum(A).",
+  "c2": "Code 2 is a Rust program that reads n and m and then m integers with the text_io read! macro, sums them into hwsum, and prints -1 if hwsum > n, otherwise n - hwsum.",
+  "cmp": "Both programs compute the number of free vacation days: N minus the total days needed for all assignments, or -1 if the assignments do not fit. Code 1's splitting into 24-day chunks is a no-op for the sum. Same input format, same single-integer output, so they appear to be semantic clones. Code 2 depends on the text_io crate, so I will run Code 1 on valid inputs and compare against Code 2's output for each.",
+  "reason": "Both print N - sum(A) when the assignments fit and -1 otherwise; Code 1's 24-day chunking does not change the sum, and Code 1's outputs match Code 2's on the tested inputs.",
+  "inputs": [
+   "41 2\n5 6\n",
+   "10 2\n5 6\n",
+   "11 2\n5 6\n",
+   "314 15\n9 26 5 35 8 9 79 3 23 8 46 2 6 43 3\n"
+  ]
+ },
+ "68": {
+  "c1": "Code 1 is a Python script that reads K and finds the first term of 7, 77, 777, ... that is a multiple of K. It prints -1 immediately when K ends in 0, 2, 4, 5, 6 or 8 (no number made of 7s can then be a multiple). For the other last digits it builds the multiple digit by digit, choosing the multiplier so the next digit becomes 7, and prints the length once the whole number consists of 7s, or -1 after K steps.",
+  "c2": "Code 2 is a Rust program that reads K. Since 77...7 = 7 * 11...1, it divides K by 7 when 7 divides K, then computes the repunits 1, 11, 111, ... modulo K using prefix sums of powers of 10 and prints the first length whose repunit is 0 modulo K, or -1 if none is found within 10^6 digits.",
+  "cmp": "Both programs answer the same question: the smallest length L such that the number made of L sevens is divisible by K, or -1 if it never is. Code 1 simulates the multiplication directly while Code 2 uses the repunit reduction, but both print one integer for the same single-integer input. They appear to be semantic clones; I will verify on valid inputs.",
+  "reason": "Both find the first number of the form 77...7 divisible by K and print its length (or -1); Code 1 builds the multiple digit by digit and Code 2 uses the equivalent repunit-modulo test, and their outputs agree on the tested inputs.",
+  "inputs": [
+   "101\n",
+   "2\n",
+   "999983\n",
+   "7\n",
+   "3\n"
+  ]
+ },
+ "182": {
+  "c1": "Code 1 is a Python script that reads s and generates the Collatz sequence a_1 = s, a_{i+1} = a_i / 2 if even else 3 a_i + 1, stopping after 1 has appeared twice. It then prints the smallest m such that a_m equals some earlier a_n.",
+  "c2": "Code 2 is a Rust program that reads s with proconio and applies the same Collatz step. Once the value reaches 1, 2 or 4 (the cycle 4 -> 2 -> 1 -> 4) at step i, the first repeated term appears exactly three steps later, so it prints i + 3.",
+  "cmp": "Both programs compute the index of the first repeated term of the Collatz sequence starting at s. Code 1 finds it by brute-force pair comparison; Code 2 uses the fact that every sequence enters the 4-2-1 cycle. Same input and output, so they appear to be semantic clones. Code 2 needs proconio and cannot run here, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both print the smallest m with a_m equal to an earlier term of the Collatz sequence from s; Code 2 shortcuts via the 4-2-1 cycle, and Code 1's outputs match Code 2's on the tested inputs.",
+  "inputs": [
+   "8\n",
+   "7\n",
+   "54\n",
+   "1\n"
+  ]
+ },
+ "185": {
+  "c1": "Code 1 is a Python script that reads N and a list of N integers. It keeps the even numbers and prints APPROVED if every even number is divisible by 3 or 5 (or there are none), otherwise DENIED.",
+  "c2": "Code 2 is a Rust program that reads N and then N integers from the second line. For each even number that is divisible by neither 3 nor 5 it prints DENIED and stops; if no such number is found it prints APPROVED.",
+  "cmp": "Both programs apply the same rule -- every even number must be divisible by 3 or 5 -- and print APPROVED or DENIED. Code 2 exits early instead of counting, which does not change the result. They appear to be semantic clones; I will verify by running both on valid inputs.",
+  "reason": "Both print APPROVED exactly when every even input number is divisible by 3 or 5 and DENIED otherwise; the outputs of the two programs match on the tested inputs.",
+  "inputs": [
+   "5\n6 7 9 10 31\n",
+   "3\n28 27 24\n",
+   "1\n1\n"
+  ]
+ },
+ "188": {
+  "c1": "Code 1 is a Python script that reads N and K and, for i = 1..K, prints the number of ways to place K blue balls among N balls so that they form exactly i groups, modulo 10^9+7. It builds binomial coefficients with a Pascal triangle and combines them case by case.",
+  "c2": "Code 2 is a Rust program that reads N and K with proconio, precomputes factorials and inverse factorials modulo 10^9+7, and for i = 1..K prints C(N-K+1, i) * C(K-1, i-1) mod 10^9+7 (0 when i exceeds N-K+1).",
+  "cmp": "Both programs print K lines, the i-th being the number of arrangements where the K blue balls form exactly i blocks, modulo 10^9+7. Code 1 expands the count through Pascal-triangle terms while Code 2 uses the closed form C(N-K+1, i) * C(K-1, i-1). Same input and same K-line output, so they appear to be semantic clones. Code 2 uses proconio, so I will compare Code 1's output with Code 2's on valid inputs.",
+  "reason": "Both output, for each i from 1 to K, the number of ways to split K blue balls into i blocks among N-K red balls modulo 10^9+7; Code 1 uses Pascal's triangle and Code 2 the closed-form binomial product, and the outputs agree on the tested inputs.",
+  "inputs": [
+   "5 3\n",
+   "2000 3\n",
+   "4 4\n"
+  ]
+ },
+ "242": {
+  "c1": "Code 1 is a Python script that reads N (1..10) and prints, in lexicographic order, every string of length N in normal form: the first character is 'a', and each next character is at most one letter past the largest letter used so far. It enumerates these with nested loops where each c_k ranges over range(max(previous) + 2).",
+  "c2": "Code 2 is a Rust program that reads N with proconio and runs a breadth-first search over prefixes: from a prefix it may append any letter already used plus the first unused letter, in increasing order. Every prefix of length N is printed as a string. Because children are enqueued in increasing letter order, the length-N strings come out in lexicographic order.",
+  "cmp": "Both programs generate exactly the normal-form strings of length N (each new letter is at most one past the maximum so far) and print them in lexicographic order, one per line. Code 1 uses fixed nested loops and Code 2 uses a BFS, but the set and order of outputs are the same. They appear to be semantic clones. Code 2 uses proconio, so I will compare Code 1's output with Code 2's on valid inputs.",
+  "reason": "Both enumerate all normal-form strings of length N in lexicographic order; Code 1 with nested loops and Code 2 with an ordered BFS over prefixes, and their outputs match on the tested inputs.",
+  "inputs": [
+   "1\n",
+   "2\n",
+   "3\n"
+  ]
+ },
+ "75": {
+  "inputs": [
+   "29\n20\n7\n35\n120\n",
+   "101\n86\n119\n108\n57\n",
+   "123\n123\n123\n123\n123\n",
+   "10\n20\n30\n40\n50\n"
+  ],
+  "c1": "Code 1 is a Python script that reads five cooking times, one per line. For each it computes the waiting time until the next multiple of 10 (0 if the time is already a multiple of 10) with a long if/elif chain. It sorts these waits, adds the four smallest waits to the sum of all five times, and prints the result -- i.e. every dish except the last one ordered is rounded up to a multiple of 10, and the dish with the largest wait is ordered last.",
+  "c2": "Code 2 is a Rust program that reads five integers, one per line. If all are multiples of 10 it prints their sum. Otherwise it picks the dish with the smallest non-zero last digit (the largest waiting time) to order last, adds that dish's time unchanged, and adds every other dish rounded up to the next multiple of 10.",
+  "cmp": "Both programs compute the earliest time the last of five dishes is delivered when orders can only be placed at multiples of 10: round every dish up to a multiple of 10 except the one with the largest rounding gap, which is ordered last. Code 1 expresses this as 'sum of times plus the four smallest waits', Code 2 as 'round up all but the dish with the smallest non-zero last digit'. Same input and output format, so they appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both find the minimum time to receive all five dishes by rounding every cooking time up to a multiple of 10 except the one with the largest gap, which is ordered last; the two programs print the same results on the tested inputs."
+ },
+ "81": {
+  "c1": "Code 1 is a Python script that reads an odd N and N integers A, the amounts of water in N dams arranged in a circle between N mountains, where each mountain's rain 2x_i is split equally between its two neighbouring dams. It builds a tentative assignment by propagating around the circle from a chosen starting index, then corrects it with an alternating +/- adjustment so that every dam total matches A, and prints the N rain amounts.",
+  "c2": "Code 2 is a Rust program that reads N and the N values. It computes the first mountain's rain as the alternating sum A_1 - A_2 + A_3 - ... (valid because N is odd), then derives each next mountain from x_{i+1} = 2 * (A_i - x_i / 2), and prints the N values separated by spaces.",
+  "cmp": "Both programs solve the same system -- recover each mountain's rain amount from the dam totals of a circular arrangement with odd N -- and print the N amounts on one line. Code 2 uses the closed-form alternating sum for the first unknown, while Code 1 builds a tentative solution and corrects it, but the system has a unique solution so both must print the same numbers. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both reconstruct the unique rain amounts for N mountains in a circle from the dam totals and print them in order; Code 2 uses the alternating-sum formula and Code 1 a corrected propagation, and the two programs print the same results on the tested inputs."
+ },
+ "123": {
+  "inputs": [
+   "3 4 3\n1 3 3 100\n1 2 2 10\n2 3 2 10\n",
+   "10 10 1\n1 10 9 1\n",
+   "4 6 10\n2 4 1 86568\n1 4 0 90629\n2 3 0 90310\n3 4 1 29211\n3 4 3 78537\n3 4 2 8580\n1 2 1 96263\n1 4 2 2156\n1 2 0 94325\n1 4 3 94328\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N, M, Q and Q quadruples (a, b, c, d). It enumerates every non-decreasing sequence of length 10 with values in 1..10 using ten nested loops, keeps the first N elements, skips sequences whose maximum exceeds M, and for each scores the sum of d over the quadruples with A[b] - A[a] == c. It prints the maximum score.",
+  "c2": "Code 2 is a Rust program that reads the same input with proconio. It starts from the all-ones sequence of length N and advances it like an odometer through every non-decreasing sequence with values up to M, scoring each sequence the same way (sum of d where v[b-1] - v[a-1] == c), and prints the maximum.",
+  "cmp": "Both programs perform an exhaustive search over non-decreasing sequences A of length N with 1 <= A_i <= M and output the best total score of the satisfied requirements. Code 1 over-generates with fixed nested loops and filters, Code 2 iterates only the valid sequences, but the set of candidates and the score are identical. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both brute-force all non-decreasing sequences of length N with values up to M and print the maximum sum of d_i over satisfied conditions A[b_i] - A[a_i] = c_i; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "192": {
+  "inputs": [
+   "2\n",
+   "4\n",
+   "1000000000000\n",
+   "1\n",
+   "7\n"
+  ],
+  "c1": "Code 1 is a Python script (with a large unused template of imports and comments) that reads H, the health of one monster. Attacking a monster with health greater than 1 splits it into two monsters with health floor(H/2). The script simulates the splitting level by level, adding 2^(level-1) attacks for each level until all monsters have health at most 1, and prints the total number of attacks.",
+  "c2": "Code 2 is a Rust program that reads H, finds the highest set bit i of H, and prints 2^0 + 2^1 + ... + 2^i, i.e. 2^(i+1) - 1.",
+  "cmp": "Both programs compute the minimum number of attacks needed to defeat a monster of health H that splits in two on each attack. The splitting tree has depth equal to the bit length of H, so the count is 2^(bit length) - 1; Code 1 reaches it by simulation and Code 2 by the closed form. Same input and output, so they appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both output the number of attacks needed against a monster of health H that splits into two halves, which is 2^(bit length of H) - 1; Code 1 simulates the levels and Code 2 uses the closed form, and they print the same results on the tested inputs."
+ },
+ "194": {
+  "inputs": [
+   "0011\n",
+   "11011010001011\n",
+   "0\n",
+   "0101\n",
+   "1110\n"
+  ],
+  "c1": "Code 1 is a Python script that reads a string of 0s and 1s (cubes stacked in a column) and computes how many cubes can be removed by repeatedly deleting an adjacent pair of one red (0) and one blue (1) cube. It groups the string into runs with alternating signs and accumulates the matched amounts, printing twice the number of matched pairs.",
+  "c2": "Code 2 is a Rust program that reads the same string and scans it with a signed counter (+1 for '1', -1 for '0'), counting a match whenever the current character cancels the opposite sign of the counter, and prints twice the number of matches.",
+  "cmp": "Both programs compute the maximum number of cubes that can be removed, which equals 2 * min(#0, #1): every red cube can eventually be paired with a blue one. Code 1 does it via run-length groups and Code 2 via a running balance, but the printed value is the same. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both count how many red/blue cube pairs can be removed from the stack (2 * min of the counts of 0s and 1s) and print that number; the two programs agree on the tested inputs."
+ },
+ "210": {
+  "inputs": [
+   "5\n1 1 2 1 2\n",
+   "4\n1 2 3 4\n",
+   "5\n3 3 3 3 3\n",
+   "8\n1 2 1 4 2 1 4 1\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N and N integers A (each between 1 and N). It counts how many times each value occurs, computes the number of equal pairs C(cnt, 2) per value and their total, and for each k prints the number of pairs of equal values among all balls except the k-th: total - C(cnt[A_k], 2) + C(cnt[A_k] - 1, 2), using a cumulative-sum array and its own combination helper.",
+  "c2": "Code 2 is a Rust program that reads N and A with proconio, counts occurrences in a HashMap, computes total = sum of v(v-1)/2, and for each A_k prints total - cnt(cnt-1)/2 + (cnt-1)(cnt-2)/2 where cnt is the count of A_k.",
+  "cmp": "Both programs answer the same per-index query -- the number of pairs of equal values after removing the k-th ball -- and print N lines. Both use the same identity (subtract the pairs of A_k's value, add back the pairs with one fewer occurrence); only the data structures differ. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "For every k both print the number of equal-value pairs among the other N-1 balls, computed as total pairs minus C(c,2) plus C(c-1,2) for the removed ball's value; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "241": {
+  "inputs": [
+   "615\n",
+   "217\n",
+   "100\n",
+   "99\n",
+   "1999\n"
+  ],
+  "c1": "Code 1 is a Python script that reads X and decides whether X yen can be spent exactly using items priced 100, 101, 102, 103, 104 and 105 yen. It splits X into X // 100 (the maximum number of items) and X % 100 (the extra yen above 100 per item) and searches with a DFS whether the extra can be formed from increments 1..5 using at most X // 100 items. It prints 1 or 0.",
+  "c2": "Code 2 is a Rust program that reads X and, if X < 100, prints 0. Otherwise it tries all counts of 105-, 104-, 103-, 102- and 101-yen items with nested loops and checks whether the remainder is a multiple of 100; it prints 1 if some combination works, else 0.",
+  "cmp": "Both programs decide whether X can be written as a sum of prices 100..105 and print 1 or 0. Code 1 uses the observation that each item contributes 100 plus an increment of 0..5, Code 2 enumerates item counts directly, but they test the same condition on the same single-integer input. They appear to be semantic clones; I will verify on valid inputs.",
+  "reason": "Both decide whether X yen can be paid exactly with items costing 100 to 105 yen and print 1 or 0; Code 1 searches over the increments above 100 and Code 2 enumerates item counts, and their outputs agree on the tested inputs."
+ },
+ "249": {
+  "inputs": [
+   "2 3 3\n2 2\nRRL\nLUD\n",
+   "4 3 5\n2 2\nUDRRR\nLLDUD\n",
+   "5 6 11\n2 1\nRLDRRUDDLRL\nURRDRLLDLRD\n"
+  ],
+  "c1": "Code 1 is a Python script that reads a grid H x W, the number of turns N, a start square (s_y, s_x) and two move strings S (Takahashi, who wants the piece to fall off) and T (Aoki, who wants to keep it on). For each of the four directions separately it simulates Takahashi greedily pushing toward that edge and Aoki greedily pushing back, and prints NO if the piece can be forced off in any direction, YES otherwise.",
+  "c2": "Code 2 is a Rust program that reads the same input with proconio. For each direction L, R, U, D it tracks how far the piece has been pushed toward that edge (pos), increments pos when S[i] moves toward the edge and checks whether it went off, then lets T[i] push it back by one without leaving the board. If the piece can leave in any direction it prints NO, else YES.",
+  "cmp": "Both programs solve the same two-player game: check each of the four directions independently, with Takahashi always moving toward that edge and Aoki always moving away, and print NO if the piece can be pushed off in some direction and YES otherwise. The per-direction greedy simulation is the same idea in both, only the bookkeeping differs. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both simulate the removal game direction by direction with greedy play for both players and print NO if the piece can be forced off the grid, YES otherwise; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "253": {
+  "inputs": [
+   "4\n3 1 3 2\n",
+   "6\n105 119 105 119 105 119\n",
+   "4\n1 1 1 1\n",
+   "6\n1 2 1 3 2 3\n"
+  ],
+  "c1": "Code 1 is a Python script that reads an even n and a sequence v. It splits v into the even-indexed and odd-indexed elements, finds the most frequent value in each half, and prints the minimum number of replacements so the sequence alternates between two DIFFERENT values: if the two most frequent values differ, n - c_even - c_odd; otherwise it falls back to the second most frequent value in one of the halves.",
+  "c2": "Code 2 is a Rust program that reads n and the sequence, splits it into even and odd positions, builds sorted (-count, value) frequency lists for both halves, and chooses the best combination of the top (or second) value in each half with different values, printing n/2 + n/2 minus the kept counts.",
+  "cmp": "Both programs compute the minimum number of elements to rewrite so the sequence becomes /\\/\\/\\/ (positions of the same parity equal, the two values different). Both pick the most frequent value per parity class and handle the tie case by using a second-most-frequent value. Same input and single-integer output, so they appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both find the fewest replacements to make the even and odd positions each constant with two different values, using the most frequent (or second most frequent) value per parity class; the two programs print the same results on the tested inputs."
+ },
+ "284": {
+  "inputs": [
+   "3 4\n2 2 4\n",
+   "5 8\n9 9 9 9 9\n",
+   "10 10\n3 1 4 1 5 9 2 6 5 3\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N, S and N integers A. With a DP over (index, sum) modulo 998244353 -- starting A_i with weight 2^i, and at each next element either doubling the count (the element is in the outer subset but not the inner one, or not in the outer subset) or adding it to the sum -- it prints, over all subsets T of {1..N}, the total number of subsets of T whose A-sum is exactly S.",
+  "c2": "Code 2 is a Rust program that reads N, S and A with proconio and keeps a single array v[sum] modulo M. For each a it iterates sums downward: doubling v[i] (a not used in the inner subset), adding 1 when a starts a new subset, and adding v[i - a] (a used). It prints v[S].",
+  "cmp": "Both programs count, summed over all subsets T, the number of subsets U of T with sum(U) = S, modulo 998244353. The recurrence is the same -- each element contributes a factor 2 when not used in U and a transition by a_i when used -- Code 1 keeps a 2-D table and Code 2 a rolled 1-D array. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both compute the sum over all subsets T of the number of subsets of T summing to S, modulo 998244353, with the same doubling/transition DP (2-D in Code 1, rolled 1-D in Code 2); Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "292": {
+  "inputs": [
+   "9 3\n0001000100\n",
+   "5 4\n011110\n",
+   "6 6\n0101010\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N, M and a 0/1 string S of length N+1 (1 = a game-over square). Working backwards from square N, it greedily jumps to the farthest reachable safe square at most M away, and prints the resulting dice rolls from the start in order, or -1 if some stretch of M consecutive game-over squares makes the goal unreachable.",
+  "c2": "Code 2 is a Rust program that reads N, M and S. It computes for every safe square its minimum number of rolls to reach square N (a backward BFS-like sweep over squares within distance M), prints -1 if square 0 is unreachable, and otherwise walks forward from 0, always taking the smallest next step that decreases the remaining distance, printing those step sizes.",
+  "cmp": "Both programs output the lexicographically smallest shortest sequence of dice rolls (each 1..M) that moves from square 0 to square N without landing on a '1', or -1 if impossible. Code 1 builds it greedily from the goal, Code 2 via distance labels and a forward walk, but both yield the same sequence. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both find the lexicographically smallest minimum-length sequence of rolls from square 0 to N avoiding game-over squares (or -1); Code 1 greedily from the goal and Code 2 via distance labels, and they print the same results on the tested inputs."
+ },
+ "298": {
+  "inputs": [
+   "11\n",
+   "136\n",
+   "100000\n",
+   "7\n",
+   "999\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N (1 <= N <= 10^5) and prints how many integers in 1..N have an odd number of digits, using a closed form per digit-length range (N for 1-digit, 9 for 2-digit, N-90 for 3-digit, 909, N-9090, 90909).",
+  "c2": "Code 2 is a Rust program that reads N with proconio and counts, by iterating i from 1 to N, the numbers whose value lies in 1..9, 100..999, 10000..99999 or 1000000..9999999 -- the numbers with an odd number of digits.",
+  "cmp": "Both programs count the positive integers up to N with an odd number of digits. Code 1 uses a piecewise closed form, Code 2 counts by brute force, but the value printed is the same for every valid N. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both print the number of integers in 1..N with an odd number of digits -- Code 1 via a piecewise formula and Code 2 by iteration -- and Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "304": {
+  "inputs": [
+   "chokudai\nchokudaiz\n",
+   "snuke\nsnekee\n",
+   "a\naa\n",
+   "abc\nabd\n"
+  ],
+  "c1": "Code 1 is a Python script that reads two strings S and T, performs some input sanity checks (lowercase letters), and prints Yes if T is S with exactly one character appended (len(T) == len(S) + 1 and T[:-1] == S), otherwise No.",
+  "c2": "Code 2 is a Rust program that reads S and T as character vectors with proconio. It prints No if len(S) + 1 != len(T); otherwise it compares S with the first len(S) characters of T and prints Yes if they all match, No otherwise.",
+  "cmp": "Both programs decide whether T equals S followed by one extra character and print Yes or No. Code 1's extra validity checks always pass for valid (lowercase) inputs, so the decision is identical. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both print Yes exactly when T is S with one character appended and No otherwise; Code 1's additional input checks never fire on valid inputs, and its outputs match Code 2's on the tested inputs."
+ },
+ "356": {
+  "inputs": [
+   "4\n1 2 2 1\n",
+   "5\n3 1 2 3 1\n",
+   "8\n4 23 75 0 23 96 50 100\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N and the target heights h. It scans the sequence for local peaks (mountains) and local minima (valleys), handling flat stretches and both ends, and prints sum(mountains) - sum(valleys): the minimum number of watering operations, each of which adds 1 to a contiguous range of flowers.",
+  "c2": "Code 2 is a Rust program that reads N and h. For every level num from 1 to max(h) it counts the number of maximal contiguous blocks of flowers with height >= num, and prints the total over all levels.",
+  "cmp": "Both programs compute the minimum number of range-increment operations needed to reach the heights h. The number of contiguous blocks at each level summed over levels equals the sum of peak heights minus the sum of valley heights, so Code 1's peak/valley formula and Code 2's level-by-level counting give the same value. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both output the minimum number of watering operations for the heights (Code 1 as the sum of peaks minus valleys, Code 2 as the number of contiguous blocks summed over all levels, which are equal); the two programs print the same results on the tested inputs."
+ },
+ "311": {
+  "inputs": [
+   "3\n2\n1 2\n10\n2\n1 1\n10\n6\n2 3 4 5 6 7\n111000\n",
+   "1\n1\n5\n1\n",
+   "1\n1\n5\n0\n",
+   "1\n3\n1 2 3\n010\n"
+  ],
+  "c1": "Code 1 is a Python script that reads T test cases, each with N, integers A and a 0/1 string S saying which player controls each round (player 0 wants the final XOR x to be 0, player 1 wants it non-zero; in round i the controller may XOR A_i into x). Processing the rounds in reverse, it runs Gaussian elimination over GF(2) on the bits and decides whether player 1 has a number that player 0 can no longer cancel; it prints 1 if player 1 wins, 0 otherwise, per test case.",
+  "c2": "Code 2 is a Rust program that reads T test cases with proconio. For each case it walks the rounds from last to first, maintaining a XOR basis of player-0 numbers: a player-0 number is reduced against the basis and added if non-zero; if a player-1 number does not reduce to 0 (it is independent of player 0's later numbers) it sets flag. It prints 1 if flag is set, 0 otherwise.",
+  "cmp": "Both programs solve the same XOR game: player 1 wins exactly when some number of theirs is not in the linear span (over GF(2)) of player 0's numbers from later rounds. Code 1 uses a bit-matrix elimination, Code 2 an incremental XOR basis, and both print one 0/1 line per test case. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both decide the XOR game by checking, from the last round backwards, whether a player-1 number lies outside the span of later player-0 numbers, printing 1 or 0 per test case; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "323": {
+  "inputs": [
+   "contest\nson\n",
+   "contest\nprogramming\n",
+   "contest\nsentence\n",
+   "ab\nbab\n"
+  ],
+  "c1": "Code 1 is a Python script that reads strings s and t. It builds a next-occurrence table for s with wrap-around and walks through t, jumping to the next position of each character (wrapping into the next copy of s when needed). It prints the minimum i such that t is a subsequence of the first i characters of s repeated infinitely, or -1 if t uses a letter not in s.",
+  "c2": "Code 2 is a Rust program that reads s and t with proconio (as ASCII strings), precomputes for every letter and position of s the distance to the next occurrence of that letter with wrap-around (-1 if the letter never occurs), and advances a position counter i through t with these skips, printing i, or -1 if some letter is missing.",
+  "cmp": "Both programs compute the same value: the length of the shortest prefix of s repeated infinitely that contains t as a subsequence, or -1. Both use a next-occurrence table with wrap-around and a single pass over t. They appear to be semantic clones; Code 2 uses external crates, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both find the minimum i such that t is a subsequence of the first i characters of s repeated, using a wrap-around next-occurrence table, and print -1 when impossible; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "347": {
+  "inputs": [
+   "2 3 1\n1 1\n1 2\n2 2\n1 2\n",
+   "10 3 2\n1 5\n2 8\n7 10\n1 7\n3 10\n",
+   "10 10 10\n1 6\n2 9\n4 5\n4 7\n4 7\n5 8\n6 6\n6 7\n7 9\n10 10\n1 8\n1 9\n1 10\n2 8\n2 9\n2 10\n3 8\n3 9\n3 10\n1 10\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N, M, Q, then M trains (L, R) and Q queries (p, q). It counts trains per (L, R) cell, builds a 2-D prefix-sum table, and for each query prints the number of trains with p <= L and R <= q using inclusion-exclusion on the table.",
+  "c2": "Code 2 is a Rust program that reads the same input with proconio. It answers the queries offline: sorts trains and queries by left endpoint, keeps a Fenwick tree over right endpoints of the trains whose L is still >= the current p, and for each query counts those with R <= q. It prints the answers in the original query order.",
+  "cmp": "Both programs answer, for each query (p, q), how many trains run entirely within [p, q]. Code 1 uses a 2-D prefix sum, Code 2 an offline sweep with a Fenwick tree, but the per-query counts are identical and printed one per line in query order. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both count, for every query, the trains with p <= L and R <= q and print the counts in query order -- Code 1 with a 2-D prefix sum, Code 2 with an offline Fenwick sweep -- and Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "460": {
+  "inputs": [
+   "0 5\n",
+   "1 11\n",
+   "2 85\n",
+   "0 100\n",
+   "1 100\n"
+  ],
+  "c1": "Code 1 is a Python script that reads D and N and prints the N-th smallest positive integer divisible by 100 exactly D times: N * 100^D for N < 100, and (N + 1) * 100^D when N == 100 (to skip 100^(D+1), which is divisible one time too many).",
+  "c2": "Code 2 is a Rust program that reads D and N, and walks through the multiples of 100^D, counting those whose exact power of 100 is D; it prints the N-th one found.",
+  "cmp": "Both programs output the N-th positive integer that can be divided by 100 exactly D times. Code 1 uses the closed form with the N = 100 special case, Code 2 enumerates candidates and checks the exponent, so they produce the same value for valid inputs (D in 0..2, N in 1..100). They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both print the N-th smallest integer divisible by 100 exactly D times (Code 1 by formula with the N = 100 correction, Code 2 by enumeration), and the two programs agree on the tested inputs."
+ },
+ "511": {
+  "inputs": [
+   "issii\n2\n",
+   "qq\n81\n",
+   "cooooooooonteeeeeeeeeest\n999993333\n",
+   "aba\n3\n"
+  ],
+  "c1": "Code 1 is a Python script that reads a string S and an integer K, where T is S concatenated K times. It computes the minimum number of character changes so that no two adjacent characters of T are equal: within one copy each run of length L needs L // 2 changes, runs that cross the boundary between copies (when S starts and ends with the same character) are merged, and the all-one-character case gives (|S| * K) // 2. It prints that minimum.",
+  "c2": "Code 2 is a Rust program that reads S and K with proconio. It counts the changes needed inside one copy by pairing equal adjacent characters, handles the all-same-character case as K * |S| / 2, and otherwise adds (K - 1) extra changes when both the leading and trailing runs have odd length (the boundary between copies merges them). It prints cnt * K + (K - 1) * a.",
+  "cmp": "Both programs compute the minimum number of replacements so that S repeated K times has no two equal adjacent characters. Both count floor(run/2) per run inside a copy and correct for the leading/trailing runs that join across copies, with a special case for strings made of one character. Same input, same single-integer output, so they appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both count the minimum edits to remove equal adjacent characters in K copies of S, summing floor(run/2) per copy and correcting for runs that join across copies; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "542": {
+  "inputs": [
+   "36\n",
+   "91\n",
+   "314159265358979323846264338327950288419716939937551058209749445923078164062862089986280348253421170679\n",
+   "5\n"
+  ],
+  "c1": "Code 1 is a Python script that reads a (possibly huge) amount N as a digit string and greedily decides, digit by digit from the most significant end, whether to pay the digit exactly or to pay one more of the next higher banknote and receive change (9 - t plus carries). It prints the minimum total number of banknotes used by the customer and the clerk.",
+  "c2": "Code 2 is a Rust program that reads N as characters with proconio, reverses the digits and runs a two-state DP over digits (state = whether a carry is owed): paying digit d exactly costs d, overpaying costs 10 - d and carries 1. It prints the minimum total count.",
+  "cmp": "Both programs compute the minimum total number of banknotes (powers of 10) exchanged when paying at least N and receiving change. Code 1 uses a greedy rule on the digits, Code 2 the standard carry DP, but both return the optimum for the same single input. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both output the minimum number of banknotes the customer pays plus the clerk returns for amount N -- Code 1 by a greedy digit rule, Code 2 by a carry DP -- and Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "603": {
+  "inputs": [
+   "3\n1\n4\n3\n",
+   "2\n5\n5\n",
+   "4\n2\n7\n1\n7\n",
+   "3\n9\n2\n5\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N and then N integers, one per line. It finds the maximum M, how many times M occurs, and the largest value S other than M. For each i it prints the maximum of all elements except A_i: M, unless A_i is the unique maximum, in which case S.",
+  "c2": "Code 2 is a Rust program that reads N and N integers, one per line, builds prefix maxima l and suffix maxima r, and for each i prints max(prefix max before i, suffix max after i) -- the maximum of all elements except A_i.",
+  "cmp": "Both programs print, for every index i, the maximum of the sequence with A_i removed, one value per line. Code 1 uses the largest/second-largest trick, Code 2 prefix and suffix maxima, but the outputs are identical. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both output, for each i, the maximum of all elements other than A_i (Code 1 via max/second max, Code 2 via prefix and suffix maxima), and the two programs print the same results on the tested inputs."
+ },
+ "642": {
+  "inputs": [
+   "aabbaa\n",
+   "aaaccacabaababc\n",
+   "ab\n",
+   "aaaaaaa\n"
+  ],
+  "c1": "Code 1 is a Python script that reads a string S and computes the maximum K such that S can be split into K non-empty pieces where adjacent pieces are different strings. It works on run lengths: each run of length L contributes 2 * (L // 3) plus 1 if L % 3 != 0, with an adjustment between neighbouring runs that both leave a remainder of 2. It prints K.",
+  "c2": "Code 2 is a Rust program that reads S with proconio and runs a DP over positions where every piece has length 1 or 2 (dp[i][j] = best count with the last piece of length j+1), forbidding a piece equal to the previous one. It prints the best count for the whole string.",
+  "cmp": "Both programs compute the maximum number of pieces in a partition of S with no two adjacent pieces equal. An optimal partition only needs pieces of length 1 or 2, which Code 2 encodes directly in its DP, while Code 1 derives the same count from run lengths. Same input and output, so they appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both find the largest K for splitting S into K pieces with adjacent pieces different -- Code 1 from run lengths, Code 2 with a DP over pieces of length 1 or 2 -- and Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "643": {
+  "inputs": [
+   "3 5 7\n",
+   "3 2 9\n",
+   "20 20 19\n",
+   "1 20 20\n"
+  ],
+  "c1": "Code 1 is a Python script that contains several unused helper functions (a DFS and a BFS) and imports; the part that actually runs reads A, B and T and prints floor(T / A) * B -- the number of biscuits produced by a machine that makes B biscuits at every multiple of A seconds, within T + 0.5 seconds.",
+  "c2": "Code 2 is a Rust program that reads A, B and T with proconio, scales the times by 10 to compare against T + 0.5 without floats, and adds B for every multiple of A seconds that is below T + 0.5. It prints the total.",
+  "cmp": "Both programs count the biscuits made at times A, 2A, 3A, ... up to T + 0.5 seconds, i.e. floor(T / A) * B. Code 1's DFS/BFS helpers are never called and do not affect the output, and Code 2 just loops instead of dividing. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both print floor(T / A) * B, the number of biscuits produced within T + 0.5 seconds; Code 1's extra DFS/BFS functions are dead code, and its outputs match Code 2's on the tested inputs."
+ },
+ "666": {
+  "inputs": [
+   "15\n",
+   "100000\n",
+   "2\n",
+   "999\n",
+   "1000\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N and prints the minimum possible value of digitsum(A) + digitsum(B) over positive integers A + B = N. It prints the digit sum of N, except when N is a power of 10, where it prints 10.",
+  "c2": "Code 2 is a Rust program that reads N and tries every split A = p, B = N - p with p <= N / 2, computing the digit sums directly, and prints the minimum.",
+  "cmp": "Both programs compute min(digitsum(A) + digitsum(B)) over A + B = N with A, B >= 1. Code 1 uses the known closed form (digit sum of N, or 10 for powers of 10) and Code 2 brute-forces all splits, so they print the same number. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both output the minimum digit-sum total over all splits of N into two positive integers -- Code 1 by closed form and Code 2 by brute force -- and the two programs agree on the tested inputs."
+ },
+ "697": {
+  "inputs": [
+   "3\nABCA\nXBAZ\nBAD\n",
+   "9\nBEWPVCRWH\nZZNQYIJX\nBAVREA\nPA\nHJMYITEOX\nBCJHMRMNK\nBP\nQVFABZ\nPRGVYL\n",
+   "7\nRABYBBE\nJOZ\nBMHQUVA\nBPA\nISU\nMCMABAOBHZ\nSZMEHMA\n",
+   "2\nBA\nBA\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N strings and computes the maximum number of occurrences of \"AB\" in a concatenation of all strings in some order. It counts the \"AB\"s inside each string, classifies strings as ending with A only, starting with B only, or both (B...A), and adds the best number of joins: len(both) + min(#A-ended, #B-started), with corrections when one of the groups is empty.",
+  "c2": "Code 2 is a Rust program that reads N strings with proconio, counts the internal \"AB\" occurrences, splits the strings into B...A, B...X and X...A groups, pairs X...A with B...X strings, chains the B...A strings (count - 1 joins), and adds one more join when a leftover end can attach to the chain. It prints the total.",
+  "cmp": "Both programs maximize the number of \"AB\" substrings after concatenating the strings in the best order: internal occurrences plus the joins created by an A-ending string followed by a B-starting string. They use the same classification into A-ended, B-started and B...A strings, with case analysis for empty groups. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both count internal \"AB\"s and add the maximum number of A|B joins obtainable by ordering the strings, using the same A-ended / B-started / B...A classification; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "736": {
+  "inputs": [
+   "1905\n",
+   "0112\n",
+   "1700\n",
+   "1213\n",
+   "0000\n"
+  ],
+  "c1": "Code 1 is a Python script that reads a 4-digit string S, splits it into the first two digits and the last two digits, and checks which of them could be a month (01..12). It prints YYMM if only the last two digits form a month, MMYY if only the first two do, AMBIGUOUS if both do, and NA if neither.",
+  "c2": "Code 2 is a Rust program that reads S with proconio, sets ff if the first two characters are one of \"01\"..\"12\" and bb if the last two are, and prints AMBIGUOUS (both), MMYY (only the first), YYMM (only the last) or NA (neither).",
+  "cmp": "Both programs classify a 4-digit string as YYMM, MMYY, AMBIGUOUS or NA based on which half is a valid month; any two digits are a valid year, so the decision depends only on the two month checks. Code 1 phrases the conditions with extra year checks that are always true, Code 2 compares against a list of month strings. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both decide YYMM / MMYY / AMBIGUOUS / NA from whether the first and last two digits are valid months (01-12); Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "738": {
+  "inputs": [
+   "3 8\n",
+   "2 100\n",
+   "1 2\n",
+   "1 4\n",
+   "3 9\n"
+  ],
+  "c1": "Code 1 is a Python script that reads X (number of animals) and Y (total legs), solves for the number of cranes a = 2X - Y/2 and turtles b = Y/2 - X, and prints Yes if both are non-negative integers (with at least one positive), otherwise No.",
+  "c2": "Code 2 is a Rust program that reads X and Y with proconio and prints No if Y > 4X or Y is odd; otherwise it checks the all-cranes and all-turtles cases and then tries every split of the X animals into i cranes and X - i turtles, printing Yes if some split has exactly Y legs, otherwise No.",
+  "cmp": "Both programs decide whether X animals, each a crane (2 legs) or a turtle (4 legs), can have exactly Y legs in total. Code 1 solves the linear system directly, Code 2 searches over the splits, but both answer the same yes/no question for the same input. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both print Yes exactly when some mix of cranes and turtles totalling X animals has Y legs -- Code 1 by solving the equations, Code 2 by enumeration -- and Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "759": {
+  "inputs": [
+   "6 1\n3\n",
+   "10 2\n4\n5\n",
+   "100 5\n1\n23\n45\n67\n89\n",
+   "5 0\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N, M and M broken step indices. It counts the ways to climb from step 0 to step N taking 1 or 2 steps at a time without stepping on a broken step: a Fibonacci-style DP where broken steps are fixed to 0, with small cases handled explicitly. It prints the count modulo 10^9+7.",
+  "c2": "Code 2 is a Rust program that reads N, M and the broken steps (one per line), marks usable steps, and fills a DP from the top step down, dp[i] = dp[i+1] + dp[i+2] for usable steps, taken modulo 10^9+7. It prints the number of ways.",
+  "cmp": "Both programs count the staircase paths with steps of 1 or 2 that avoid the broken steps, modulo 10^9+7, and print one number. Code 1 runs the DP upward and Code 2 downward, which gives the same count. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both count the ways to climb N stairs in steps of 1 or 2 avoiding the broken steps, modulo 10^9+7 (Code 1 bottom-up, Code 2 top-down), and the two programs print the same results on the tested inputs."
+ },
+ "850": {
+  "inputs": [
+   "BBW\n",
+   "BWBWBW\n",
+   "WWBB\n",
+   "BWBBW\n"
+  ],
+  "c1": "Code 1 is a Python script that reads a string S of 'B' and 'W' (stones that can be flipped by the operation 'BW' -> 'WB'). It trims leading W's and trailing B's, then scans the string keeping a count of B's seen so far and adds that count at every W. It prints the total, which is the maximum number of operations.",
+  "c2": "Code 2 is a Rust program that reads S, builds a prefix count t of 'B' characters, and adds t[i] (the number of B's before position i) for every 'W' at position i. It prints the sum.",
+  "cmp": "Both programs compute the maximum number of 'BW' -> 'WB' operations, which equals the number of (B, W) pairs with the B before the W. Code 1's trimming of leading W's and trailing B's does not change that count, and both sum the B's to the left of each W. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both count the pairs of a B followed later by a W (the maximum number of BW->WB operations) by summing the number of preceding B's at each W, and the two programs print the same results on the tested inputs."
+ },
+ "898": {
+  "inputs": [
+   "3 3\n.##\n.#.\n##.\n",
+   "2 2\n#.\n.#\n",
+   "4 4\n..##\n#...\n###.\n###.\n",
+   "5 5\n.#.#.\n#.#.#\n.#.#.\n#.#.#\n.#.#.\n"
+  ],
+  "c1": "Code 1 is a Python script that reads an H x W grid of '.' and '#'. Moving only right or down from the top-left to the bottom-right, it computes the minimum number of maximal '#' segments that must be entered (each flip operation can clear one), using a 0-1 BFS with two queues where entering a '#' from a '.' costs 1. It prints that minimum.",
+  "c2": "Code 2 is a Rust program that reads the same grid and fills a DP along anti-diagonals: memo[i][j] is the minimum of the values from the left and from above, adding 1 whenever the move goes from '.' into '#' (the start counts 1 if it is '#'). It prints memo[H-1][W-1].",
+  "cmp": "Both programs compute the minimum, over right/down paths, of the number of times the path enters a black segment, which is the minimum number of rectangle-flip operations needed. Code 1 uses a 0-1 BFS and Code 2 a DP over the grid, but they minimize the same cost. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both find the minimum number of '.'->'#' transitions along a right/down path from the top-left to the bottom-right (Code 1 with a 0-1 BFS, Code 2 with a DP), and the two programs print the same results on the tested inputs."
+ },
+ "900": {
+  "inputs": [
+   "4\n1231\n",
+   "10\n2311312312\n",
+   "1\n3\n",
+   "3\n111\n"
+  ],
+  "c1": "Code 1 is a Python script (with unused helper lambdas) that reads N and a string of digits 1-3. It computes the final value of the absolute-difference triangle x_{i,j} = |x_{i-1,j} - x_{i-1,j+1}|: it works with a_i - 1, determines the parity of the result from the binomial coefficients C(N-1, i) mod 2 (tracking factors of 2 with a counter), and, when no digit equals 1 after shifting (all values in {0, 2}), halves the values and doubles the answer. It prints 0, 1 or 2.",
+  "c2": "Code 2 is a Rust program that reads N and the digits with proconio and shifts them to 0..2. If all values are even it counts the 2s at positions i where C(N-1, i) is odd (tested as (N-1) == i | (N-1-i)) and prints 2 * (count mod 2); otherwise it counts the 1s at such positions and prints the count mod 2.",
+  "cmp": "Both programs compute the value at the bottom of the difference triangle using the same facts: the answer is 0 or 1 when some value is 1 (its parity given by the XOR of the terms with odd binomial coefficient), and 0 or 2 when all values are in {0, 2}. Code 1 counts powers of 2 in the binomials incrementally, Code 2 uses the bitwise Lucas test. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both evaluate the absolute-difference triangle via binomial coefficients mod 2, with the all-even case doubled, and print 0, 1 or 2; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "901": {
+  "inputs": [
+   "6\nkhabarovsk 20\nmoscow 10\nkazan 50\nkazan 35\nmoscow 60\nkhabarovsk 40\n",
+   "10\nyakutsk 10\nyakutsk 20\nyakutsk 30\nyakutsk 40\nyakutsk 50\nyakutsk 60\nyakutsk 70\nyakutsk 80\nyakutsk 90\nyakutsk 100\n",
+   "3\nb 1\na 2\na 5\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N restaurants, each a city name and a score, and orders the restaurant indices by city name in lexicographic order and, within the same city, by score in descending order, using a selection sort on an index list. It prints the 1-based indices in that order, one per line.",
+  "c2": "Code 2 is a Rust program that reads N (city, score) pairs with proconio, remembers each pair's original 1-based index in a HashMap, sorts the pairs by city, re-sorts each block of equal cities by score in descending order, and prints the original indices in the resulting order.",
+  "cmp": "Both programs print the restaurant numbers sorted by city name ascending and then by score descending. Scores are distinct, so the (city, score) pairs uniquely identify restaurants and the HashMap lookup in Code 2 is safe. Different sorting mechanics, same output. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both output the restaurant indices ordered by city name ascending and score descending (Code 1 via selection sort, Code 2 via sort plus per-city reverse sort), and Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "939": {
+  "inputs": [
+   "3\n5\n11\n7\n8\n19\n0\n",
+   "1\n0\n",
+   "10000\n0\n"
+  ],
+  "c1": "Code 1 is a Python script that reads integers, one per line, until it reads 0. For each value x_i before the terminating 0 it prints \"Case i: x_i\" (with a never-triggered \"Too Large\" branch for more than 10000 datasets).",
+  "c2": "Code 2 is a Rust program that reads lines in a loop, stops at \"0\", and for each other value prints \"Case i: x\" with an incrementing case number.",
+  "cmp": "Both programs echo each input value with its 1-based case number in the format \"Case i: x\" and stop at the terminating 0. Code 1's size check cannot trigger within the problem's limits. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both print \"Case i: x\" for each dataset until the terminating 0; the two programs produce identical output on the tested inputs."
+ },
+ "941": {
+  "inputs": [
+   "4 3\n1 2\n2 3\n3 4\n",
+   "5 4\n1 2\n1 3\n1 4\n4 5\n",
+   "3 2\n1 2\n2 3\n",
+   "2 5\n1 2\n"
+  ],
+  "c1": "Code 1 is a Python script that reads a tree with N vertices and K colours and counts the colourings in which any two vertices at distance at most 2 get different colours, modulo 10^9+7. It roots the tree at a high-degree vertex, then assigns each vertex the number of colours still available: K for the root, K-1, K-2, ... for the root's children, and K-2, K-3, ... for the children of any other vertex (excluding the parent and grandparent colours and already-coloured siblings). It prints the product.",
+  "c2": "Code 2 is a Rust program that reads the same tree and does a BFS from vertex 1. Starting from K for the root, for each vertex it multiplies in (K - i - min(2, depth)) for each of its children in turn, i.e. K-1, K-2, ... below the root and K-2, K-3, ... below other vertices, modulo 10^9+7. It prints the product.",
+  "cmp": "Both programs count the proper distance-2 colourings of the tree with the same greedy product: each child has K minus (colours of its parent, possibly grandparent, and previously coloured siblings) choices. The root vertex and traversal order differ, but the product is the same for any root. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both count the colourings of the tree where vertices within distance 2 differ, as the product of available colours per vertex in a BFS order, modulo 10^9+7; the two programs print the same results on the tested inputs."
+ },
+ "946": {
+  "inputs": [
+   "2 11 4\n",
+   "3 9 5\n",
+   "100 1 10\n",
+   "1 100 100\n"
+  ],
+  "c1": "Code 1 is a Python script (with unused helper functions) that reads A, B and C: a drink costs A yen, Takahashi has B yen and will be satisfied after C drinks. It prints C if he can afford C drinks (A*C < B, otherwise the affordable count), i.e. min(B // A, C).",
+  "c2": "Code 2 is a Rust program that reads A, B and C and repeatedly spends A yen while it can (B // A times), counting drinks and stopping early once the count reaches C. It prints the count, i.e. min(B // A, C).",
+  "cmp": "Both programs print how many times the sound is heard: min(B // A, C). Code 1 compares A*C with B, Code 2 simulates the purchases; the unused helpers in Code 1 have no effect. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both output min(B // A, C), the number of drinks Takahashi buys; Code 1 computes it directly and Code 2 by simulation, and the two programs print the same results on the tested inputs."
+ },
+ "950": {
+  "inputs": [
+   "6\n9 1 4 4 6 7\n",
+   "8\n9 1 14 5 5 4 4 14\n",
+   "14\n99592 10342 29105 78532 83018 11639 92015 77204 30914 21912 34519 80835 100000 1\n",
+   "2\n1 2\n"
+  ],
+  "c1": "Code 1 is a Python script that reads an even N and N difficulties d. It builds a cumulative count of problems with difficulty <= x for every x up to 10^5 and prints how many thresholds x give exactly N/2 problems at or below x -- the number of choices of K that split the problems into two equal halves (difficulty >= K vs < K).",
+  "c2": "Code 2 is a Rust program that reads N and d, sorts d, and for every K from min(d) to max(d) binary-searches the number of difficulties below K, counting the K for which exactly N/2 are below. It prints the count.",
+  "cmp": "Both programs count the integers K for which exactly half of the problems have difficulty below K. After sorting this is d[N/2] - d[N/2 - 1]; Code 1 counts it with a prefix-count array and Code 2 with a binary search for each K. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both count the thresholds K that split the problems into two equal halves by difficulty (Code 1 with cumulative counts, Code 2 with per-K binary search), and the two programs print the same results on the tested inputs."
+ },
+ "956": {
+  "inputs": [
+   "7\n100 130 130 130 115 115 150\n",
+   "6\n200 180 160 140 120 100\n",
+   "2\n157 193\n",
+   "6\n7 3 7 8 2 5\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N daily stock prices and starts with 1000 yen. It removes consecutive duplicates, marks the local minima ('-', buy) and local maxima ('+', sell), drops a leading sell and a trailing buy, then buys as many shares as possible at each minimum and sells all at the next maximum. It prints the final amount of money.",
+  "c2": "Code 2 is a Rust program that reads N and the prices with proconio, deduplicates consecutive equal prices, collects the alternating local minima and maxima (including the ends when they are a valid buy/sell point), and for each (buy, sell) pair adds (sell - buy) * (money / buy) to the money. It prints the result.",
+  "cmp": "Both programs compute the maximum money after trading with full buy-at-every-local-minimum / sell-at-the-next-local-maximum strategy, starting from 1000 yen. The same valley/peak extraction is used in both, with slightly different bookkeeping. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both greedily buy the maximum number of shares at each local minimum and sell them at the following local maximum starting from 1000 yen, and Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "1035": {
+  "inputs": [
+   "4 150\n150 140 100 200\n",
+   "1 500\n499\n",
+   "5 1\n100 200 300 400 500\n",
+   "3 5\n5 5 4\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N, K and N heights, sorts the heights, finds with a custom binary search the first position whose height is >= K, and prints N minus that position -- the number of friends at least K centimetres tall.",
+  "c2": "Code 2 is a Rust program that reads N, K and the heights and counts the heights that are >= K in a single loop. It prints the count.",
+  "cmp": "Both programs count how many of the N heights are at least K. Code 1 sorts and binary-searches for the first height >= K, Code 2 counts directly, so the printed number is the same. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both print the number of heights >= K (Code 1 via sorting and a lower-bound search, Code 2 via a direct count), and the two programs agree on the tested inputs."
+ },
+ "1050": {
+  "inputs": [
+   "119\n",
+   "999\n",
+   "111\n",
+   "191\n"
+  ],
+  "c1": "Code 1 is a Python script that reads a three-digit number made only of the digits 1 and 9 and swaps every 1 with 9 and every 9 with 1, printing the result.",
+  "c2": "Code 2 is a Rust program that reads the number as a string with proconio and maps each of the eight possible inputs (111, 119, ..., 999) to its swapped version with an if/else chain, printing the result.",
+  "cmp": "Both programs swap the digits 1 and 9 in a three-digit number consisting of 1s and 9s. Code 1 does it digit by digit, Code 2 with a lookup of all eight cases, which covers every valid input. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both output the number with 1s and 9s swapped; Code 2 enumerates all eight valid inputs explicitly, and Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "1054": {
+  "inputs": [
+   "5 2\n",
+   "3 -1\n",
+   "30 -50\n",
+   "2 0\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N and L, where apple i has flavour L + i - 1. It eats the apple whose flavour is closest to 0 and prints the sum of the remaining flavours, using three cases: all flavours positive (drop the first apple, flavour L), a range containing 0 (drop the zero, which does not change the sum), and all negative (drop the last apple).",
+  "c2": "Code 2 is a Rust program that reads N and L, computes the total flavour of all N apples, then tries removing each apple and keeps the sum whose difference from the total is smallest in absolute value. It prints that sum.",
+  "cmp": "Both programs output the total flavour of the N apples minus the apple whose flavour has the smallest absolute value, i.e. the pie closest to the original. Code 1 does it with a case split on the sign of the range and Code 2 by brute force over the removed apple. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both remove the apple with flavour closest to 0 and print the remaining sum -- Code 1 by case analysis, Code 2 by trying every apple -- and the two programs print the same results on the tested inputs."
+ },
+ "1098": {
+  "inputs": [
+   "ABCABC\n",
+   "C\n",
+   "ABCACCBABCBCAABCB\n",
+   "AABCBC\n"
+  ],
+  "c1": "Code 1 is a Python script (with unused input helpers) that reads a string s of A, B, C and counts the maximum number of times the operation 'ABC' -> 'BCA' can be applied. It scans the string keeping track of how many A's are waiting in the current block (reset by a B or C that is not part of a 'BC'), and every 'BC' that follows those A's adds the waiting count to the answer.",
+  "c2": "Code 2 is a Rust program that reads s with proconio, replaces every 'BC' by a single token D, then scans from the right: each D increases a counter, each lone B or C resets it, and each A adds the counter to the answer. It prints the total.",
+  "cmp": "Both programs compute the maximum number of 'ABC' -> 'BCA' operations, which is the number of (A, BC) pairs where the A precedes the BC and only A's and other BC's lie between them. Code 1 scans left to right counting A's, Code 2 compresses BC to D and scans right to left counting D's, so they count the same pairs. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both count pairs of an A and a later 'BC' separated only by A's and BC's, which is the maximum number of ABC->BCA operations; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "1118": {
+  "inputs": [
+   "RUDLUDR\n",
+   "DULL\n",
+   "UUUUUUUUUUUUUUU\n",
+   "ULURU\n",
+   "RDULULDURURLRDULRLR\n"
+  ],
+  "c1": "Code 1 is a Python script that reads a string S of the characters L, R, U, D and checks that every odd-position character (1-based) is R, U or D and every even-position character is L, U or D. It prints Yes if the string is 'easily playable', otherwise No.",
+  "c2": "Code 2 is a Rust program that reads S and checks with an all() over the indices that odd positions contain R, U or D and even positions contain L, U or D. It prints Yes or No accordingly.",
+  "cmp": "Both programs check the same condition -- no L at an odd position and no R at an even position -- and print Yes or No. Code 1 returns early on the first violation, Code 2 uses all(), which is equivalent. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both print Yes exactly when odd positions avoid 'L' and even positions avoid 'R'; the two programs agree on the tested inputs."
+ },
+ "1124": {
+  "inputs": [
+   "6\n0 1 2 3 4 5\n",
+   "3\n0 0 0\n",
+   "4\n0 1 0 1\n",
+   "3\n0 1 3\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N and A, where A_i is the number of people in front of person i wearing the same hat colour (3 colours). It keeps the current counts of the three colours, and for each A_i multiplies the answer by the number of colours whose count equals A_i (printing 0 if none does), then increments one of them; the answer is taken modulo 10^9+7.",
+  "c2": "Code 2 is a Rust program that reads N and A with proconio. It tracks, for each value k, how many colours currently have count k (c[k]); for each A_i it multiplies the answer by c[A_i - 1] (the colours that can take this person) and moves one colour from count A_i - 1 to A_i. The zeros are handled at the end by multiplying by 3, 6 or 0 depending on how many colours were started. It prints the result modulo 10^9+7.",
+  "cmp": "Both programs count the hat-colour assignments consistent with the statements, as the product over people of the number of colours whose current count equals A_i, modulo 10^9+7. Code 1 tracks the three counts directly, Code 2 tracks how many colours have each count and treats the starts separately. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both multiply, for each person, the number of colours whose running count equals A_i, giving the number of valid colourings modulo 10^9+7; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "1188": {
+  "inputs": [
+   "4 1\n5 4 2 1\n",
+   "3 2\n380 19 1\n",
+   "12 3\n4 56 78 901 2 345 67 890 123 45 6 789\n",
+   "2 2\n1 1\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N, M and N vote counts A. It computes the threshold ceil(total / (4M)) and counts the items with at least that many votes; it prints Yes if at least M items qualify, otherwise No.",
+  "c2": "Code 2 is a Rust program that reads N, M and the votes, sorts them in descending order, computes the threshold total / (4M) as a float, and walks from the largest item down, counting items with votes >= threshold until M have been found. It prints Yes if it found M such items, otherwise No.",
+  "cmp": "Both programs decide whether M popular items can be selected, where an item is selectable if it has at least 1/(4M) of the total votes. Code 1 uses the integer ceiling of the threshold and counts qualifying items, Code 2 compares against the float threshold on the sorted list; for integer votes both tests are equivalent. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both check whether at least M items have at least total/(4M) votes and print Yes or No (Code 1 with an integer ceiling, Code 2 with a float threshold on sorted votes), and the two programs agree on the tested inputs."
+ },
+ "1199": {
+  "inputs": [
+   "4 2 6\n",
+   "7 3 4\n",
+   "314159265 35897932 384626433\n",
+   "1 1 1\n"
+  ],
+  "c1": "Code 1 is a Python script that reads K, A and B. Starting with 1 biscuit, in each of K operations Snuke can hit the pocket (+1 biscuit), exchange A biscuits for 1 yen, or exchange 1 yen for B biscuits. The script first hits until it has A biscuits, then, if B - A > 2, repeats the 2-operation cycle (A biscuits -> 1 yen -> B biscuits) as many times as possible, and spends any leftover operation on a hit. It prints the maximum number of biscuits.",
+  "c2": "Code 2 is a Rust program that reads K, A and B and computes the same maximum: if exchanging does not pay off (B <= A + 2) it prints K + 1; otherwise it spends A - 1 operations reaching A biscuits, then performs (remaining / 2) exchange cycles each adding B - A biscuits, and adds 1 for an odd leftover operation.",
+  "cmp": "Both programs compute the maximum number of biscuits after exactly K operations: hitting only when an exchange cycle gains at most 2 biscuits, otherwise reaching A biscuits and repeating the two-step exchange. The greedy plan is the same in both. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both maximize the biscuits after K operations by hitting up to A biscuits and then repeating the A->1 yen->B exchange when it gains more than 2, otherwise just hitting; the two programs print the same results on the tested inputs."
+ },
+ "1164": {
+  "inputs": [
+   "3 1\n1 2 1\n",
+   "6 5\n1 2 1\n2 3 2\n1 3 3\n4 5 4\n5 6 5\n",
+   "100000 1\n1 100000 100\n",
+   "4 2\n1 2 1\n3 4 1\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N and M constraints (X_i, Y_i, Z_i) linking the parities of cards X_i and Y_i. It merges the linked cards into clusters (tracking which cluster each card belongs to) and prints the number of clusters plus the number of cards never mentioned -- the number of connected components, i.e. the minimum number of cards whose value must be revealed.",
+  "c2": "Code 2 is a Rust program that reads N and the M triples with proconio, builds an undirected graph on the cards from the (X, Y) pairs, and counts the connected components with a BFS. It prints the count.",
+  "cmp": "Both programs count the connected components of the graph whose edges are the constraint pairs (X_i, Y_i); the Z_i values do not matter because knowing one card in a component determines the rest. Code 1 merges clusters manually, Code 2 uses BFS. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both output the number of connected components formed by the constraint pairs (the minimum number of cards to reveal), via manual cluster merging in Code 1 and BFS in Code 2; Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "1175": {
+  "inputs": [
+   "4\nWWRR\n",
+   "2\nRR\n",
+   "8\nWRWWRWRR\n",
+   "5\nRWRWR\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N and a string of W and R stones and computes the minimum number of operations (swap two stones or recolour one) so that no W is immediately to the left of an R. It counts W's and R's and moves two pointers inwards, pairing a W on the left with an R on the right, counting one operation per pair. It prints that count.",
+  "c2": "Code 2 is a Rust program that reads N and the stones with proconio, moves a left pointer to the next W and a right pointer to the previous R, and swaps them while the left pointer is before the right one, counting the swaps. It prints the count.",
+  "cmp": "Both programs compute the minimum number of operations to make the stones of the form R...RW...W, which equals the number of W's among the first (#R) positions; both obtain it with a two-pointer pairing of misplaced W's and R's. They appear to be semantic clones; Code 2 uses proconio, so I will compare Code 1 against Code 2's outputs on valid inputs.",
+  "reason": "Both count the misplaced W/R pairs with two pointers (the minimum operations to avoid a W directly left of an R), and Code 1's outputs match Code 2's on the tested inputs."
+ },
+ "1194": {
+  "inputs": [
+   "4\n1 4 6 3\n",
+   "2\n1000000000 1\n",
+   "5\n1 1 1 1 1\n",
+   "3\n5 2 9\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N and N integers and prints the maximum absolute difference between two elements with different indices, enumerating all pairs with a hand-written combinations generator.",
+  "c2": "Code 2 is a Rust program that reads N and the integers, tracks the running maximum and minimum, and prints max - min.",
+  "cmp": "Both programs output the maximum |A_i - A_j| over pairs of elements, which equals max(A) - min(A). Code 1 checks every pair, Code 2 uses the closed form. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both print the largest absolute difference between two elements (all pairs in Code 1, max - min in Code 2), and the two programs agree on the tested inputs."
+ },
+ "480": {
+  "inputs": [
+   "4 6\n1 3 2\n7 13 10\n18 20 13\n3 4 2\n0\n1\n2\n3\n5\n8\n",
+   "1 2\n1 5 1\n0\n4\n",
+   "2 3\n0 10 5\n2 4 1\n0\n1\n5\n"
+  ],
+  "c1": "Code 1 is a Python script that reads N roadworks (S_i, T_i, X_i) -- point X_i is blocked during [S_i - 0.5, T_i - 0.5) -- and Q start times D_j of people walking from 0 at speed 1. It converts each roadwork into the interval of start times [S_i - X_i, T_i - X_i) that would hit it, sweeps the interval endpoints in order while keeping a min-heap of active X values (with lazy deletion), records the nearest active blocked point for every segment of start times, and for each D_j prints that distance or -1.",
+  "c2": "Code 2 is a Rust program that reads the same input with its own get! macro, builds the same events (S - X, X, start) and (T - X, X, end), sorts them, keeps the active X values in a BinaryHeap with a HashSet for lazy deletion, records the start time at which the minimum active X changes, and for each sorted D prints the current minimum or -1.",
+  "cmp": "Both programs solve the same sweep problem: each person starting at D stops at the smallest X_i with S_i - X_i <= D < T_i - X_i, or walks forever (-1). Both turn roadworks into start-time intervals, sweep them with a min-heap plus lazy deletion, and answer the queries in increasing order of D. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both map each roadwork to the interval of start times that hit it, sweep those intervals with a lazily-deleted min-heap, and print for every D the nearest blocked point or -1; the two programs print the same results on the tested inputs."
+ },
+ "973": {
+  "inputs": [
+   "oxoxoxoxoxoxox\n",
+   "xxxxxxxx\n",
+   "o\n",
+   "xxxxxxx\n"
+  ],
+  "c1": "Code 1 is a Python script with several unused helpers (doit, createSw) and a debug print to stderr. The part that runs reads the results S of the first k days of a 15-day sumo tournament ('o' win, 'x' loss), counts the losses, and prints YES if Takahashi can still reach 8 wins (enough wins already, or enough remaining days), otherwise NO.",
+  "c2": "Code 2 is a Rust program that reads S, counts the 'o' characters, and prints YES if wins so far plus the remaining 15 - k days is at least 8, otherwise NO.",
+  "cmp": "Both programs decide whether 8 wins out of 15 are still reachable: current wins plus remaining days >= 8, which is the same as losses <= 7. Code 1 counts losses and Code 2 counts wins, and Code 1's helper functions and stderr output do not affect stdout. They appear to be semantic clones; I will run both on valid inputs.",
+  "reason": "Both print YES exactly when the wins so far plus the remaining days reach 8 (equivalently at most 7 losses); Code 1's unused helpers and stderr debug output do not change stdout, and the two programs print the same results on the tested inputs."
+ }
+}

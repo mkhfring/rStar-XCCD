@@ -1,0 +1,208 @@
+% =============================================================================
+% METHODOLOGY ADDITIONS, 2026-09-24 -- DRAFT, NOT YET MERGED INTO methodology.tex
+% =============================================================================
+% Source of every claim: SESSION_CHANGELOG_2026-09-24.md (findings + commands),
+% SFT_DATA_PROCESS.txt section 9, MCTS_SEARCH_SCORING.md "Scoring review,
+% 2026-09-24". Blocks are keyed to the existing section labels; each says where
+% it goes. Numbers marked [CONFIRM] depend on jobs still running (3945722/37
+% rust, 3945738/44 java, 3945991 -> 3945992/93); replace them when those finish.
+%
+% BEFORE MERGING -- consistency fix needed in the existing text:
+%   Sec. subsec:evaluator ("Fallback for trees with no valid vote") describes
+%   the CURRENT rule (fallback only when V is empty), but Sec.
+%   subsec:experimental_setting reports 0.9454 (java) and 0.8739 (rust), which
+%   were computed with the PRE-2026-09-12 rule (override applied to every tree
+%   showing the signature). Under the rule the text describes, the same trees
+%   score 0.9163 and 0.7952. Either restate the numbers or describe the rule
+%   that produced them (Block E gives both).
+% =============================================================================
+
+
+% -----------------------------------------------------------------------------
+% BLOCK A -- append to \subsection{Execution Model} (subsec:execution_model)
+% -----------------------------------------------------------------------------
+\paragraph{Offline differential testing.} Independently of the policy model,
+we run both programs of a pair on the same inputs and compare their standard
+output after whitespace normalization, counting an input only when both
+programs exit cleanly. Inputs come from three sources: the inputs the model
+itself wrote in its test code, random inputs generated from the input
+declaration of the non-Python program when it uses a declarative reader (the
+declaration fixes the token sequence; several line layouts are tried because
+the Python side typically reads line by line), and the official sample
+inputs of the underlying programming-contest problem. For offline testing
+only, the third-party libraries that competitive-programming Rust solutions
+commonly depend on are compiled once and linked, so programs that the search
+environment cannot run can still be executed here. This check is used to
+audit labels and trajectories and to build training data
+(Section~\ref{subsec:training_data}); it never takes part in producing a
+prediction. On the 81 clone pairs the base model misclassifies in our Rust
+training split, 60 agree on every valid input; every label-contradicting
+disagreement we inspected was caused by an input that violated the problem's
+constraints.
+
+\paragraph{External-library detection.} The rule that decides whether a
+non-Python program depends on unavailable libraries works on import
+statements. We found that it over-matches (an import-like phrase inside a
+comment, a locally declared module, or a fully qualified standard-library
+path), so some Rust programs that compile without any external dependency
+are reported as unrunnable. All results in this paper use the rule as
+described; correcting it changes the execution environment and therefore
+requires re-running every baseline.
+
+
+% -----------------------------------------------------------------------------
+% BLOCK B -- append to \subsection{MCTS-Based Search} (subsec:mcts_search)
+% -----------------------------------------------------------------------------
+\paragraph{Effective search budget.} Under the evaluation configuration
+(2 rollouts, 2 candidate continuations per expansion), the requirement that
+every unvisited child be visited once before any sibling is revisited means
+both rollouts are spent on the two children of the root. Intermediate step
+rewards therefore cannot redirect an evaluation run; they matter only at
+larger budgets, such as the data-mining configurations
+(Section~\ref{subsec:training_data}).
+
+\paragraph{Step scoring.} For those larger budgets we define a label-free
+step score (version 2) that fixes several properties of the earlier
+consistency-based score: a step's outcome is taken from the interpreter's
+exception status rather than from a substring test; a step that produces no
+output, or only prints the model's own verdict, is scored neutrally rather
+than positively; a passing or failing assertion is treated as evidence about
+equivalence only if the executed program actually ran the non-Python side,
+because otherwise it compares the Python output against a value the model
+guessed; a step that runs both programs receives an additional bonus; and a
+terminal clone decision whose stated reason claims tests passed, while no
+step on its path produced any output, is penalized. Replaying both versions
+over stored trees, and measuring how well a step's score separates steps
+whose subtrees end mostly in correct answers (ground truth used only for
+this measurement), the earlier score is anti-predictive on ground-truth
+clone questions (AUC 0.35--0.48), and version 2 reverses this on mining
+trees (AUC 0.57--0.61). Both stay close to chance overall, so we treat step
+scoring as a weak lever and do not use version 2 for evaluation.
+
+
+% -----------------------------------------------------------------------------
+% BLOCK C -- insert into \subsection{The Evaluator} (subsec:evaluator),
+%            after "Vote aggregation"
+% -----------------------------------------------------------------------------
+\paragraph{Test-conditioned vote correction.} The prompt instructs the model
+to skip testing and emit a fixed non-clone marker when it judges a pair
+non-equivalent, and to test otherwise (Section~\ref{subsec:prompt_design}).
+A non-clone leaf whose trajectory nevertheless ran a test is therefore a
+trajectory that leaned towards equivalence and reversed its decision after a
+test -- in practice, usually a test comparing the Python output against an
+expected value the model guessed for the other program. We therefore let
+such a leaf vote \texttt{clone}:
+\[
+    v_i' =
+    \begin{cases}
+        \text{clone}, & \text{if } v_i = \text{non-clone} \text{ and trajectory } i \text{ executed a test}, \\
+        v_i, & \text{otherwise},
+    \end{cases}
+\]
+before applying clone-on-disagreement to $V' = \{v_1', \ldots, v_k'\}$.
+Like clone-on-disagreement, this correction depends on the model's
+behaviour rather than on the task: it is justified only when non-clone
+decisions reached after testing are mostly wrong, which holds for the base
+model (91--96\% of such leaves are ground-truth clones on the training split)
+but not for our fine-tuned models, which also test genuinely non-equivalent
+pairs. We therefore decide per model whether to apply it, on that model's own
+predictions for the training split, and report only held-out numbers.
+
+
+% -----------------------------------------------------------------------------
+% BLOCK D -- new \subsection{Training Data Construction}, before
+%            \subsection{Experimental Setting}
+% -----------------------------------------------------------------------------
+\subsection{Training Data Construction}
+\label{subsec:training_data}
+
+\paragraph{Splits.} Fine-tuning data drawn from the evaluation benchmark is
+restricted to a training split, and models trained on it are evaluated only
+on the corresponding held-out split. Splitting by the Python side's problem
+alone is insufficient: the benchmark reuses each non-Python program in its
+clone pair and in several non-clone pairs, and under a Python-only split
+every held-out Rust program (and 19\% of held-out Java programs) also appears
+in the training split. We therefore assign each non-Python program to the
+problem of the clone pair it appears in, draw 20\% of problems as held out,
+and keep a pair on a side only if both of its programs' problems belong to
+that side, dropping pairs that straddle the split. For Rust this yields 830
+training and 110 held-out pairs (60 clone, 50 non-clone), with no exact and
+no near-duplicate ($\geq$0.95 token Jaccard) programs shared between them.
+
+\paragraph{Trajectory filtering.} Trajectories mined from the model's own
+search are kept for supervised fine-tuning only if they reach the correct
+label and their evidence is sound. A trajectory is discarded if it attempted
+execution and never obtained a successful run, if its answer claims that
+tests passed while no step produced output, if it concluded equivalence from
+an input on which the two programs actually differ, or if its only
+``test'' printed a verdict. Trajectories that are correct but unverified
+(for example, whose only code step produced no output) are kept at lower
+priority, and near-duplicate trajectories are capped per question. We then
+reviewed every remaining trajectory manually and removed those that describe
+the wrong problem, test a re-implementation rather than the given program,
+state false facts about either program, or reach the right label with a
+wrong description.
+
+\paragraph{Teacher and repaired trajectories.} For misclassified clone pairs
+that the model's own search never solves, we add trajectories whose analysis
+steps were written by hand after reading both programs, in the same step
+format the policy produces. Their test steps run both programs, or, when the
+execution environment cannot run the non-Python side, the Python side
+against that side's verified outputs, on inputs where the two programs were
+verified to agree. The observation shown in every such trajectory is the
+real output of the execution environment, never written by hand, and a
+trajectory is kept only if every compared case matches. Where a model
+trajectory's reasoning was correct but its test step produced nothing, we
+keep its reasoning and conclusion verbatim and replace only the test step.
+Because these trajectories are written by a different model, fine-tuning on
+them is a form of distillation, and we report it separately from
+self-generated data. Non-clone examples are drawn from the model's own
+verified trajectories so that both labels are equally represented.
+
+\paragraph{Preference data.} From the same trees we derive step-level
+preference pairs (sibling steps whose subtrees differ in mean trajectory
+reward by at least 0.5) and trajectory-level pairs (best- vs.
+worst-rewarded trajectory of a question, a teacher trajectory vs. the model's
+most-visited wrong one, and a repaired trajectory vs. its original). The
+trajectory reward is $+1$ for a correct decision backed by real execution
+output, $+0.5$ for a correct but unverified one, $-0.5$ for a correct
+decision whose trajectory has one of the defects listed above, and $-1$ for
+a wrong decision, so that correct-for-the-wrong-reason trajectories are not
+reinforced.
+
+
+% -----------------------------------------------------------------------------
+% BLOCK E -- \subsection{Experimental Setting} (subsec:experimental_setting):
+%            replace the baseline numbers / add to "Metrics"
+% -----------------------------------------------------------------------------
+\paragraph{Aggregation version.} All $F_1$ scores are computed from the
+stored search trees with a single, fixed evaluator version, and every model
+is re-scored with that version. [Choose one and state it:]
+% OPTION 1 -- current rule (fallback only when no leaf votes):
+%   base Qwen3-4B full CLCCD: Python--Java 0.9163, Python--Rust 0.7952;
+%   codenet-all-v1: Java 0.9425, Rust 0.8498.
+% OPTION 2 -- pre-2026-09-12 rule (signature overrides every tree):
+%   base: Java 0.9454 (0.9443 recomputed), Rust 0.8739;
+%   codenet-all-v1: Java 0.8594, Rust 0.6354 (the old rule collapses
+%   fine-tuned models' precision, 0.51 on Rust).
+% Held-out numbers (training/held-out split, Block D), base Qwen3-4B:
+%   Rust rl_heldout: current 0.8039, with test-conditioned correction 0.8909
+%   (independent second run 0.7921 -> 0.8850);
+%   Rust rl_heldout_strict: 0.8000 -> 0.8785 (second run 0.7174 -> 0.8762);
+%   Java rl_heldout: 0.9080 -> 0.9634.
+%   [CONFIRM with 3945722/3945738 _result_NEWRULE_tested_agg]
+
+
+% -----------------------------------------------------------------------------
+% BLOCK F -- append to \subsection{Limitations} (subsec:limitations)
+% -----------------------------------------------------------------------------
+Two evaluator components, clone-on-disagreement and the test-conditioned vote
+correction, exploit asymmetries in a particular model's behaviour rather than
+properties of the task; we decide whether to apply each on training-split
+predictions of the same model and report held-out results, but their gains
+should not be expected to transfer to other models without re-validation.
+Our strictest held-out Rust split contains only 110 pairs, so differences of
+a few hundredths of $F_1$ on it are within run-to-run variation (about $\pm$0.01
+between independent runs of the same model, larger on that subset).
+Fine-tuning data that includes teacher-written trajectories measures the
+effect of distillation, not of self-improvement alone.
