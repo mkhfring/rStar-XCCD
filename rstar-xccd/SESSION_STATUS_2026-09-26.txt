@@ -1,0 +1,209 @@
+================================================================================
+ Session status: SFT pipeline bugs found + fixed; first valid SFT retrains queued
+ Written 2026-09-26 00:45 EDT (point-in-time snapshot -- check
+ `squeue -u khajezad` / `sacct -j <id>` for current truth). Follows on from
+ SESSION_STATUS_2026-09-24.txt and SFT_DATA_PROCESS.txt section 9.
+================================================================================
+
+--------------------------------------------------------------------------------
+PASTE THIS INTO A NEW CLAUDE CODE SESSION TO GET AN UPDATE
+--------------------------------------------------------------------------------
+Read SESSION_STATUS_2026-09-26.txt in
+/lustre06/project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD/rstar-xccd
+and give me a status update: check sacct/squeue for every job ID in PART A,
+run the checks in PART B for each job that has finished, and compare the
+finished evals against the baselines in PART C under all three aggregation
+rules (rescore_runs.py --calibrate).
+--------------------------------------------------------------------------------
+
+
+UPDATE 2026-09-26 02:10 -- progress since this file was written:
+  - A1 sanity 4012716 PASSED: 20/20 trees with <code>, 13/20 with a real
+    test, 0/20 unjudged (broken checkpoint: 0/110, 47% unjudged).
+  - SFT 4014872 and 4014955 COMPLETED cleanly: "keeping 130/130" and
+    "keeping 45/45", 0 zero-loss steps, top-level weights, vocab 151936.
+  - Running: 4014873 (trackA held-out), 4014958 (java, fard twin; 4014956
+    cancelled), 4014959 (rust; twin 4014961 exited). All use the LEGACY
+    config (rust_crate_check legacy, tp 2), comparable to PART C.
+  - E0 started (EXPERIMENT_PLAN_2026-09-26.txt): opt-in strict Rust crate
+    check (config key rust_crate_check, default legacy), response-rate label
+    fixed in evaluate_clone_results.py, frozen config
+    config/qwen3_4b_frozen_e0_1gpu.yaml. Smoke test 4017925
+    (Qwen3/run_eval_smoke50_e0_frozen_qwen3_4b_1gpu.sh) prints "SMOKE:"
+    lines + WALLCLOCK_SECONDS at the end. Commit + tag still pending.
+
+PART A -- JOBS IN THE QUEUE (submitted 2026-09-25/26, all PENDING at writing)
+--------------------------------------------------------------------------------
+Logs: Qwen3/<job-name>_<jobid>.log.{out,err}   (all launchers live in Qwen3/)
+"afterok" = starts only if the SFT job exits 0; if the SFT fails, the eval is
+cancelled automatically (state CANCELLED / DependencyNeverSatisfied).
+
+A1. SANITY CHECK -- token fix only (NOT a real SFT result)
+  4012716  q3-4b-eval-sanity20-trackA-rust-v2-strict-tokfix   2 GPU, 4 h
+           launcher: run_eval_sanity20_trackA_rust_v2_strict_tokfix_qwen3_4b_2gpu.sh
+           model:    sft_checkpoints/qwen3-4b-trackA-rust-v2-strict-tokfix/checkpoint-68
+           data:     eval_data/sanity20_heldout_strict_python_rust_CLCCD.jsonl
+                     (20 rl_heldout_strict questions: 10 clone / 10 non-clone)
+  That checkpoint was trained with the special-token fix but STILL with the
+  2048-token cap (116/130 targets cut), so it only answers "does the model
+  write code again?". The job prints a final line:
+      SANITY: trees with a <code> step: X/20 | trees with a real test: Y/20
+  Reference values from the same check: broken trackA checkpoint 0/110;
+  base Qwen3-4B 1200/1200 with <code>, 288/1200 with a real test (rust test).
+  PASS = most of the 20 trees have a <code> step.
+  (Its SFT job 3997732 trained fine but FAILED writing optimizer state
+  because /project was full; the weights in checkpoint-68 were verified
+  complete: 399/399 tensors, vocab 151936. Truncated pytorch_model_fsdp.bin
+  was deleted.)
+
+A2. TRACK A STRICT RETRAIN -- first valid test of the Claude-teacher data
+  4014872  q3-4b-sft-trackA-rust-v2-strict-fixed              4 GPU, 2 h
+           launcher: run_sft_trackA_rust_v2_strict_fixed_qwen3_4b_4gpu.sh
+           data:     eval_data/sft_trackA_rust_v2_strict.jsonl (130 = 65/65;
+                     47 Claude-written teacher traces, see SFT_DATA_PROCESS 9h)
+           output:   sft_checkpoints/qwen3-4b-trackA-rust-v2-strict-fixed
+  4014873  q3-4b-eval-heldout-rust-trackA-rust-v2-strict-fixed  afterok:4014872
+           launcher: run_eval_heldout_rust_trackA_rust_v2_strict_fixed_qwen3_4b_2gpu.sh
+           data:     eval_data/rl_heldout_strict_python_rust_CLCCD.jsonl (110 q)
+           16 h limit (previous run on this file took ~7.3 h); resumes if
+           resubmitted unchanged.
+  Held-out ONLY: Track A trains on CLCCD rl_train_strict questions, so the
+  full test set would include training questions.
+
+A3. CODENET JAVA_RUST V2 RETRAIN -- Track B, evaluated on the FULL test sets
+  4014955  q3-4b-sft-hard-codenet-java-rust-v2                4 GPU, 6 h
+           launcher: run_sft_hard_codenet_java_rust_v2_qwen3_4b_4gpu.sh
+           data:     eval_data/sft_hard_codenet_java_rust_v2.jsonl (45 = 36
+                     clone / 9 non-clone -- imbalanced, watch precision)
+           output:   sft_checkpoints/qwen3-4b-hard-codenet-java-rust-v2
+  Full-CLCCD evals, afterok:4014955, twin pairs (whichever starts first
+  cancels its pending twin; the other exits without work):
+  4014956  q3-4b-eval-clccd-java-hard-codenet-java-rust-v2        def-khajezad_gpu
+  4014958  q3-4b-eval-clccd-java-hard-codenet-java-rust-v2-fard   def-fard_gpu
+  4014959  q3-4b-eval-clccd-rust-hard-codenet-java-rust-v2        def-khajezad_gpu
+  4014961  q3-4b-eval-clccd-rust-hard-codenet-java-rust-v2-fard   def-fard_gpu
+           launchers: run_eval_clccd_{java,rust}_hard_codenet_java_rust_v2_qwen3_4b_2gpu{,_fard}.sh
+           72 h limit, resume enabled (resubmit unchanged if one times out).
+           Expect 2-3 days: the v1 java_rust checkpoint ran at ~20 q/h, so
+           the java eval (1800 q) may need one resubmit.
+
+
+PART B -- WHAT TO CHECK WHEN EACH JOB FINISHES
+--------------------------------------------------------------------------------
+SFT jobs (4014872, 4014955):
+  - Near the top of .log.err: the train_SFT.py line
+      "model_max_length=8192: keeping N/N examples, dropping D ..."
+    Expected D = 0 for trackA (longest example 4,089 tokens). For
+    java_rust_v2 the full-prompt file is built at launch, so D is unknown;
+    a large D means the 8192 cap is cutting real data.
+  - Far fewer "'loss': 0.0, 'grad_norm': 0.0" steps than the broken runs
+    (those were batches whose targets were entirely truncated).
+  - Final weights at the TOP LEVEL of the output dir (4 x
+    model-0000X-of-00004.safetensors); no checkpoint-N/ dir any more.
+  - config.json vocab_size must be 151936 (151686 = old broken tokenizer).
+
+Evals (4014873, 4014956/58, 4014959/61):
+  - Count trees with code steps. Base model: 100%; every broken SFT
+    checkpoint: 0%. A fixed checkpoint near 0% means the fix did not work.
+  - No-judgment rate (printed in the _result as "Response rate"; it is
+    actually the UNJUDGED share). Broken trackA: 52/110 = 47%. Base: 0%.
+  - Rescore under all three rules, and compare against PART C:
+      python rescore_runs.py eval_data/<run>.jsonl --lang rust --calibrate
+    Only report the "tested" (new) rule if --calibrate picks it on rl_train.
+
+
+PART C -- BASELINES TO COMPARE AGAINST (base Qwen3-4B, same MCTS config:
+mode mcts, iterations 2, n_generate_sample 2, max_depth 16, temp 0.7)
+--------------------------------------------------------------------------------
+From runs 3945744 (java) / 3945737 (rust), 2026-09-24/25, rescored:
+                     old rule   current rule   NEW rule ("tested")
+  java full (1800)   0.9631     0.8827         0.9720  (P 0.999 R 0.947)
+  rust full (1200)   0.9148     0.7079         0.9199  (P 0.941 R 0.900)
+  java rl_heldout    0.9721     0.8712         0.9806
+  rust rl_heldout    0.9402     0.7551         0.9492
+  rust rl_heldout_strict (110; compare A2 here)
+                     0.9189     0.6667         0.9204  (P 0.981 R 0.867)
+  Response rate 100% under every rule for the base model.
+Published (FINAL_FOR_CLCCD.md, old rule, earlier run): java 0.9454, rust 0.8739.
+Old rule on last night's trees beats the published numbers by ~0.02-0.04
+(run-to-run sampling noise), so compare rules on the SAME trees.
+
+Qwen2.5-Coder-3B (assert-consistency-score runs of 2026-09-05, rescored):
+  the new rule HURTS it (java 0.9173 -> 0.8965, rust 0.6709 -> 0.6080):
+  Coder-3B also runs tests on non-clones, so the rule adds 62 (java) / 84
+  (rust) false positives vs 19 / 8 fixes. The new rule is Qwen3-4B-specific.
+
+
+PART D -- BUGS FOUND AND FIXED THIS SESSION (details in memory + comments)
+--------------------------------------------------------------------------------
+D1. SPECIAL-TOKEN BUG (train/train_SFT.py, fixed ~line 317):
+  The script added 17 step tags (<code>, <end_of_step>, <analysis>, ...) as
+  special tokens, then resize_token_embeddings(len(tokenizer)) with no init.
+  Qwen3-4B's matrix already has 151936 rows, so this SHRANK it to 151686 and
+  the new ids 151669-151685 reused padding rows that are all the SAME vector
+  (pairwise cosine 1.0). Embeddings are tied -> the model cannot tell the
+  tags apart. Symptom: 0 code steps in every SFT checkpoint's trees, junk
+  step starts ("ksiazka", <tool_call>), high no-judgment rate.
+  Fix: no added tokens, no resize; tags stay plain text as at inference.
+  train/train_RM.py:71 has the same pattern (not used yet -- fix before use).
+
+D2. TRUNCATION BUG (all Qwen3/run_sft_*.sh):
+  No launcher passed --model_max_length, so train_SFT.py used 2048 and
+  truncated from the right (target first). trackA strict: 116/130 targets
+  fully cut; hard-codenet java_rust v1: 168/168.
+  Fix: all 17 launchers pass --model_max_length 8192 (covers 99.5% of
+  10,161 examples; p99 7477, max 16163); train_SFT.py now DROPS over-length
+  examples and logs the count instead of truncating.
+  To fit 8192 tokens on 40 GB A100s: per_device_train_batch_size 2 -> 1 and
+  gradient_accumulation_steps doubled (effective batch unchanged: 8, or 64
+  for codenet_all/rust_only).
+
+D3. DISK QUOTA: /project/def-khajezad hit 1000/1000 GB. Each SFT run kept a
+  63 GB checkpoint-N/ dir (FSDP optimizer state). Deleted those for the 8
+  old runs (their final top-level weights are kept); live quota 489/954 GB.
+  All launchers now use --save_strategy "no" (final ~17 GB weights only).
+
+
+PART E -- RESULTS THAT ARE NOW INVALID
+--------------------------------------------------------------------------------
+Every checkpoint trained with the old train_SFT.py is broken by D1 and D2:
+  qwen3-4b-{codenet-all-v1, codenet-rust-only-v1, hard-v1, hard-java-v1,
+  hard-codenet-java-only-v1, hard-codenet-rust-only-v1,
+  hard-codenet-java-rust-v1, trackA-rust-v2-strict}
+Any SFT-vs-base comparison made with them (SESSION_STATUS_2026-09-23/24,
+SFT_DATA_PROCESS.txt section 8/9 conclusions such as "CodeNet SFT does not
+help") measures the bugs, not the data. Re-derive after retraining.
+Cancelled 2026-09-25 for this reason: 3921168, 3940134, 3940137, 3940139
+(hard-codenet v1 full-CLCCD evals; partial outputs left in eval_data/).
+Unaffected: all base-model results and the new-rule analysis (PART C).
+
+
+PART F -- UNCOMMITTED CHANGES (branch claude-session-2026-09-24)
+--------------------------------------------------------------------------------
+This session (not committed):
+  train/train_SFT.py                (D1 + D2 fixes, dated comments)
+  Qwen3/run_sft_*.sh                (17 launchers: D2 + D3 flags)
+  Qwen3/run_sft_trackA_rust_v2_strict_{tokfix,fixed}_qwen3_4b_4gpu.sh   (new)
+  Qwen3/run_eval_sanity20_trackA_rust_v2_strict_tokfix_qwen3_4b_2gpu.sh (new)
+  Qwen3/run_eval_heldout_rust_trackA_rust_v2_strict_fixed_qwen3_4b_2gpu.sh (new)
+  eval_data/sanity20_heldout_strict_python_rust_CLCCD.jsonl            (new)
+  SESSION_STATUS_2026-09-26.txt                                        (this file)
+Already modified before this session, NOT touched here:
+  rstar_deepthink/agents/mcts.py, rstar_deepthink/nodes/mcts_node.py,
+  SESSION_STATUS_2026-09-24.txt, ../SFT_DATA_PROCESS.txt, ../methodology.tex
+
+
+PART G -- OPEN DECISIONS / NEXT STEPS
+--------------------------------------------------------------------------------
+1. If A1 passes and A2 beats the base on rl_heldout_strict: retrain the
+   other v2 sets (hard_codenet_{rust_only,java_only}_v2, trackA_rust_v2)
+   with the fixed launchers.
+2. The v1 SFT runs could be retrained with the fixes to redo the
+   "does CodeNet SFT help?" comparison properly.
+3. Harness bug SFT_DATA_PROCESS 9c (rust_external_crates false positives)
+   is still unfixed; fixing it changes eval behaviour, so re-run baselines
+   in the same series if it is fixed.
+4. Consider committing the fixes (PART F) before the next training series.
+5. Full prioritised experiment list for the paper ("compact 4B model, near
+   SOTA"): EXPERIMENT_PLAN_2026-09-26.txt (P0 = E0-E4 first).
+================================================================================

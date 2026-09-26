@@ -269,13 +269,20 @@ def evaluate(input_path, aggregation=CLONE_ON_DISAGREEMENT,
     precision = tp / (tp + fp) if (tp + fp) else 0.0
     recall = tp / (tp + fn) if (tp + fn) else 0.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
-    response_rate = no_judgment / total if total else 0.0
+    # UPDATE 2026-09-26: "response_rate" used to hold no_judgment / total --
+    # the NON-response rate -- while methodology.tex defines response rate as
+    # the fraction of pairs that get a prediction. It now matches the paper;
+    # the old value is kept as "no_response_rate". _result files written
+    # before this date print the non-response share under "Response rate".
+    response_rate = judged / total if total else 0.0
+    no_response_rate = no_judgment / total if total else 0.0
 
     return {
         "total_instances": total,
         "judged_instances": judged,
         "no_judgment_instances": no_judgment,
         "response_rate": response_rate,
+        "no_response_rate": no_response_rate,
         "true_positive": tp,
         "false_positive": fp,
         "true_negative": tn,
@@ -302,8 +309,10 @@ def format_report(stats, input_path):
         f"Instances with a clone/non-clone final judgment: {stats['judged_instances']}",
         f"Instances with no clone/non-clone final judgment: {stats['no_judgment_instances']}",
         "",
-        "Response rate (instances with no clone/non-clone final judgment / total instances):",
-        f"  {stats['no_judgment_instances']} / {stats['total_instances']} = {stats['response_rate']:.4f}",
+        "Response rate (instances with a clone/non-clone final judgment / total instances):",
+        f"  {stats['judged_instances']} / {stats['total_instances']} = {stats['response_rate']:.4f}",
+        "No-response rate (instances with no clone/non-clone final judgment / total instances):",
+        f"  {stats['no_judgment_instances']} / {stats['total_instances']} = {stats['no_response_rate']:.4f}",
         "",
         "Confusion matrix (computed only over judged instances):",
         f"  True Positive  (predicted clone,     actual clone):     {stats['true_positive']}",

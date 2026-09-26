@@ -46,9 +46,15 @@ class MCTSNode(BaseNode):
     def puct(self) -> float:
         if not self.parent: return 0
         q_value = self.q_value() if self.visit_count() > 0 else 0
-        if self.parent.visit_count() == 0 or self.visit_count() == 0:
-            u_value = 0
-        else:
-            u_value = self.c_puct * np.sqrt(np.log(self.parent.visit_count()) / (self.visit_count()))
+        # AlphaZero-style exploration bonus: scales with sqrt(parent visits)
+        # and decays as this child accumulates its own visits, so it stays
+        # well-defined -- and strictly positive whenever the parent has been
+        # visited -- for an as-yet-unvisited child. The previous formula
+        # hardcoded this term to 0 whenever visit_count()==0, so a freshly
+        # created child got no credit at all for being unexplored: once any
+        # one sibling's q_value turned positive, it permanently outranked
+        # every unvisited sibling (puct()==0) and the search never revisited
+        # them again. See methodology.tex Sec. mcts_search.
+        u_value = self.c_puct * np.sqrt(self.parent.visit_count()) / (1 + self.visit_count())
         return q_value + u_value
         

@@ -149,6 +149,9 @@ class BaseConfig:
         default="v1", metadata={"help": "search-time step scoring: 'v1' = assert-consistency-score "
                                          "(unchanged default), 'v2' = rstar_deepthink/agents/step_scoring.py"}
     )
+    rust_crate_check: str = field(
+        default="legacy", metadata={"help": "'legacy' (pre-2026-09-26 regex) or 'strict' (comments stripped, local mods/types excluded) external-crate detection for Rust Code 2; see python_tool.rust_external_crates"}
+    )
     code2_bonus: float = field(
         default=0.5, metadata={"help": "v2 only: extra reward for a step that actually ran Code 2"}
     )

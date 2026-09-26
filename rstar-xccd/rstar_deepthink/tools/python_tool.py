@@ -195,16 +195,65 @@ RUST_USE_CRATE_RE = re.compile(r"\buse\s+([A-Za-z_]\w*)")
 RUST_EXTERN_CRATE_RE = re.compile(r"\bextern\s+crate\s+([A-Za-z_]\w*)")
 
 
-def rust_external_crates(source: str) -> set:
+# Char literals first so '"' does not open a string; lifetimes ('a) never
+# match because they have no closing quote.
+RUST_COMMENT_OR_STRING_RE = re.compile(r"""'(?:\\.|[^'\\])'|"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/""", re.S)
+# Items a `use` can legitimately start from without being a crate: local
+# modules (`mod io;` / `mod io {`) and local types whose variants/items get
+# imported (`enum Node {..}` + `use Node::*;`).
+RUST_LOCAL_ITEM_RE = re.compile(r"\b(?:mod|enum|struct|trait|type|union)\s+([A-Za-z_]\w*)")
+# Names bound by an earlier `use a::b::name;` or `use a::b::{x, name}` (the
+# 2015-edition relative form `use std::io; use io::*;`).
+RUST_USE_TAIL_RE = re.compile(r"\buse\s+[\w:]*::(?:\{([^}]*)\}|(\w+))\s*;")
+
+# "legacy" = the original regex over the raw source (every run before
+# 2026-09-26, so old and in-flight evals stay comparable); "strict" =
+# comments/strings stripped and locally declared names excluded. Carried in
+# an environment variable, not just this module global: the Solver executes
+# code in a *spawn* ProcessPool, whose workers re-import this module and only
+# inherit the environment. main.py calls set_rust_crate_check() from
+# config.rust_crate_check before the Solver (and its pool) is created.
+RUST_CRATE_CHECK_ENV = "RSTAR_RUST_CRATE_CHECK"
+RUST_CRATE_CHECK = os.environ.get(RUST_CRATE_CHECK_ENV, "legacy")
+
+
+def set_rust_crate_check(mode: str) -> None:
+    global RUST_CRATE_CHECK
+    if mode not in ("legacy", "strict"):
+        raise ValueError(f"rust_crate_check must be 'legacy' or 'strict', got {mode!r}")
+    RUST_CRATE_CHECK = mode
+    os.environ[RUST_CRATE_CHECK_ENV] = mode
+
+
+def rust_external_crates(source: str, mode: Optional[str] = None) -> set:
     """Non-std crate names a Rust snippet 'use's or pulls in via 'extern crate'.
 
     These would need `cargo` to fetch from crates.io, which requires network
     access this sandbox's compute nodes don't have (only the cluster's login
     nodes do). A non-empty result means the snippet can't be compiled here
     with plain `rustc`.
+
+    UPDATE 2026-09-26 ("strict" mode): on the 300 distinct Code 2 programs of
+    test_python_rust_CLCCD.jsonl, "legacy" refuses 93, of which 4 (16 test
+    pairs) compile fine with plain rustc: a `use` inside a comment
+    ("// use priority_queue::..", "... use inherent method instead"),
+    `use Node::*` for a local `enum Node`, and `use io::*` after
+    `use std::io`. "strict" removes exactly those; it cannot catch crates
+    used only through full paths (`proconio::input!` with no `use`), which
+    fail to compile and reach the model as a compile error instead.
     """
+    mode = mode or RUST_CRATE_CHECK
+    if mode == "strict":
+        source = RUST_COMMENT_OR_STRING_RE.sub(
+            lambda m: '""' if m.group(0)[0] in "\"'" else " ", source)
     crates = set(RUST_USE_CRATE_RE.findall(source)) | set(RUST_EXTERN_CRATE_RE.findall(source))
-    return crates - RUST_NON_CRATE_PATH_ROOTS
+    crates -= RUST_NON_CRATE_PATH_ROOTS
+    if mode == "strict":
+        crates -= set(RUST_LOCAL_ITEM_RE.findall(source))
+        for group, single in RUST_USE_TAIL_RE.findall(source):
+            names = group.split(",") if group else [single]
+            crates -= {n.strip().split(" as ")[-1].strip() for n in names}
+    return crates
 
 
 # Suffixes of the code/build artifacts a step can leave in the working

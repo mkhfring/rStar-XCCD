@@ -1,0 +1,51 @@
+# FROZEN evaluation config for the paper (EXPERIMENT_PLAN_2026-09-26.txt, E0).
+# Every paper run from E1 on (dev calibration, final test seeds, ablation
+# baselines) uses this file unchanged; ablations copy it and change ONE key.
+#
+# Identical to my_test_mcts_qwen3_4b_depth_16_2gpu_no_sampling.yaml (the
+# config behind all Qwen3-4B base-model numbers so far) except:
+#   - tp: 1 -- a single A100; the 4B model fits easily, and one GPU is the
+#     deployment the "compact model" claim is about (E3 cost accounting).
+#   - rust_crate_check: strict -- stops refusing to execute Rust Code 2 that
+#     compiles with plain rustc (4 of 300 test programs / 16 pairs; see
+#     python_tool.rust_external_crates).
+# Numbers from this config are NOT comparable to runs with the 2-GPU legacy
+# config; re-run baselines under this file.
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_imprvoed.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt.json"
+
+swap_space: 8
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 2
+best_of: 2
+is_sampling: False
+iterations: 2
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 2
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 1
+
+rust_crate_check: "strict"

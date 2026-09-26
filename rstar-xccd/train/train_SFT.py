@@ -200,6 +200,22 @@ class SupervisedDataset(Dataset):
                 sources.append(prompt_input.format_map(example))
         targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
 
+        # UPDATE 2026-09-25: drop over-length examples instead of letting
+        # _tokenize_fn truncate them. Truncation is from the right, so it cuts
+        # the TARGET first; with the old 2048 default (no launcher passed
+        # --model_max_length) 116/130 trackA and 168/168 hard-codenet
+        # java-rust examples had their target removed entirely (loss 0.0,
+        # grad_norm 0.0) and every example was at least partly cut.
+        max_len = tokenizer.model_max_length
+        keep = [len(tokenizer(s + t)["input_ids"]) <= max_len for s, t in zip(sources, targets)]
+        dropped = keep.count(False)
+        logging.warning(f"model_max_length={max_len}: keeping {len(keep) - dropped}/{len(keep)} examples, "
+                        f"dropping {dropped} longer than the limit")
+        if dropped == len(keep):
+            raise ValueError(f"every example exceeds model_max_length={max_len}")
+        sources = [s for s, k in zip(sources, keep) if k]
+        targets = [t for t, k in zip(targets, keep) if k]
+
         self.sources = sources
         self.targets = targets
 
@@ -314,13 +330,20 @@ def train():
                 "unk_token": DEFAULT_UNK_TOKEN,
             }
         )
-    tokenizer.add_special_tokens(
-            {
-                "additional_special_tokens": ['<code>', '<end_of_step>', '<end_of_code>', '<output>', '<end_of_output>', '<answer>', '<end_of_answer>', '<|user|>', '<|assistant|>', '<refine>', '<end_of_refine>', '\n<|assistant|>', "<error_info>", "<end_of_error_info>", "<BACK>", "<analysis>", "<end_of_analysis>"]
-            },
-            replace_additional_special_tokens=False,
-        )
-    model.resize_token_embeddings(len(tokenizer))
+    # UPDATE 2026-09-25: removed the rStar-Math block that registered the
+    # step tags ('<code>', '<end_of_step>', '<end_of_code>', '<analysis>', ...
+    # 17 in all) as additional special tokens and then called
+    # resize_token_embeddings(len(tokenizer)) with no initialisation.
+    # Qwen3-4B's embedding already has 151936 rows (151669 real tokens + unused
+    # padding), so that "resize" SHRANK it to 151686 and the 17 new ids reused
+    # padding rows that are all the same vector (pairwise cosine 1.0). With
+    # tied embeddings the model could not tell <code> from <end_of_step> from
+    # <analysis> on input or output, and small SFT runs never separated them:
+    # every checkpoint trained with that block writes 0 code steps at MCTS
+    # eval (base model: 100%). The base model -- and the MCTS prompt, few-shots
+    # and vLLM stop strings -- treat these tags as plain text, so SFT now does
+    # the same: no added tokens, no resize, identical tokenization at train
+    # and inference time.
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
     trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
     trainer.train()  # resume

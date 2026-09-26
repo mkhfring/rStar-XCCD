@@ -73,12 +73,27 @@ class MCTS(BS):
         return None if (node is None or node.is_terminal) else node
 
     def select_child(self, node: Type[MCTSNode]) -> Optional[Type[MCTSNode]]:
+        candidates = [child for child in node.children if not child.is_terminal]
+
+        # Supplementary guard on top of the puct() fix above: guarantee every
+        # non-terminal child gets at least one visit before any of its
+        # siblings is exploited a second time. puct()'s exploration bonus
+        # alone only makes unvisited children *attractive*, not mandatory --
+        # a sibling with a strong first-visit reward can still outbid a
+        # never-visited one on raw puct value. Restricting the competition to
+        # not-yet-visited children whenever any exist removes that failure
+        # mode outright, at the cost of needing at least `n_generate_sample`
+        # rollouts to clear one level of the tree before any depth beyond it
+        # is explored -- see methodology.tex Sec. mcts_search for the
+        # resulting interaction with configs where iterations is smaller
+        # than n_generate_sample.
+        unvisited = [child for child in candidates if child.visit_count() == 0]
+        if unvisited:
+            candidates = unvisited
+
         best_value = -float("inf")
         best_childs = []
-
-        for child in node.children:
-            if child.is_terminal:
-                continue
+        for child in candidates:
             puct_value = child.puct()
             if puct_value == best_value:
                 best_childs.append(child)
@@ -86,7 +101,6 @@ class MCTS(BS):
                 best_value = puct_value
                 best_childs = [child]
 
-        #return random.choice(best_childs) if best_childs else None
         return best_childs[0] if best_childs else None
 
     def expand_node(self, outputs: List[CompletionOutput], node: Type[MCTSNode]) -> None:

@@ -1,0 +1,230 @@
+================================================================================
+ Experiment plan: "a compact (4B) model that reaches near-SOTA cross-language
+ clone detection by executing both programs"
+ Written 2026-09-26. Companion to SESSION_STATUS_2026-09-26.txt (job tracker)
+ and methodology.tex (paper draft). Priorities: P0 = paper is not credible
+ without it; P1 = reviewers will ask, strong impact; P2 = strengthens the
+ story; P3 = optional. Within a tier, items are ordered by impact/effort.
+================================================================================
+
+--------------------------------------------------------------------------------
+0. WHERE THE CLAIM STANDS TODAY (numbers already in the repo)
+--------------------------------------------------------------------------------
+Same test pairs (java 1800 = 900/900; rust 1200 = 300 clone/900 non-clone).
+Pure = single pass, no execution (pure_inference/offline_results/*_evaluate_result.txt).
+
+  System                                  params  java F1   rust F1   notes
+  --------------------------------------  ------  --------  --------  -----------------------------
+  Qwen3-4B pure                           4B      0.8767    0.4806
+  Qwen2.5-Coder-3B pure                   3B      0.9457    0.6255
+  DeepSeek-Coder-7B-v1.5 pure             7B      0.9506    0.7878
+  Qwen2.5-Coder-7B pure                   7B      0.9492    0.8893
+  Qwen3-8B pure                           8B      0.9559    0.9088    <- the one to beat
+  GPT-3.5-Turbo (CLCCD paper, best prompt) ?      0.9239    --        same 1800 java pairs
+  text-embedding-3-large + threshold      ?       0.9728    --        20% test split only (n=360)
+  --------------------------------------  ------  --------  --------  -----------------------------
+  Qwen3-4B MCTS, published (old rule)     4B      0.9454    0.8739    FINAL_FOR_CLCCD.md
+  Qwen3-4B MCTS, 09-24 run, current rule  4B      0.8827    0.7079
+  Qwen3-4B MCTS, 09-24 run, NEW rule      4B      0.9720    0.9199    rule chosen on CLCCD data
+
+Reading: the compact claim only holds with the NEW aggregation rule (4B+exec
+beats 8B pure by ~0.016 java / ~0.011 rust). Under the published rule, 8B
+single-pass wins on both languages and is likely much cheaper to run (one
+call per pair; not yet measured -- see E3). So the paper
+hinges on (a) validating the rule on data that is not the test set, (b)
+showing the gap is larger than run-to-run noise (0.02-0.04 F1 observed), and
+(c) showing the cost story. No external python-rust baseline exists yet
+(EXTERNAL_BASELINES_COMPARISON.txt).
+
+
+--------------------------------------------------------------------------------
+P0 -- REQUIRED (do these first, roughly in this order)
+--------------------------------------------------------------------------------
+
+E0. FREEZE THE PIPELINE                           difficulty: LOW-MED  impact: CRITICAL
+  Everything below must run on ONE frozen pipeline, so do this first.
+  - Fix the rust harness bug (SFT_DATA_PROCESS.txt 9c): rust_external_crates()
+    flags `use` in comments, local `mod`, `::std` paths as external crates and
+    refuses to run Code 2 (5/20 hard rust questions). It directly undercuts
+    the "we execute both programs" claim.
+  - Pick the single inference config (currently
+    config/my_test_mcts_qwen3_4b_depth_16_2gpu_no_sampling.yaml) and GPU
+    count (prefer 1 GPU -- see E3), and tag the git commit.
+  - Fix the "Response rate" label in evaluate_clone_results.py (it prints the
+    UNJUDGED share).
+  Done when: commit tagged; a 50-pair rust smoke run shows Code 2 executing
+  on the previously refused cases.
+
+E1. VALIDATE THE AGGREGATION RULE ON NON-TEST DATA  difficulty: MED  impact: CRITICAL
+  The headline numbers depend on the rule (rust: 0.708 current vs 0.920 new
+  on the SAME trees), and all three rules were chosen by looking at CLCCD
+  test data. The paper currently claims held-out selection.
+  Option A (recommended): build a CodeNet DEV set per language (~300 pairs,
+  same clone/non-clone construction as the test sets, problem ids disjoint
+  from the CLCCD test pairs -- check with check_leakage.py). Run the frozen
+  base Qwen3-4B pipeline on it, choose the rule there (rescore_runs.py),
+  then score the full CLCCD test sets ONCE with that rule.
+  Option B (cheaper, weaker): choose on rl_train, report only rl_heldout /
+  rl_heldout_strict (smaller test sets -> wider CIs).
+  Cost: A = 2 eval runs of ~300 pairs (~2-3 h each on 2 GPUs).
+  Note: existing Qwen3-4B CodeNet trees (codenet_train_*.rl-mining-codenet-v1)
+  use the MINING config (sampling, 4 samples, 3 iterations) -- NOT reusable
+  for calibration; the dev run must use the frozen eval config.
+  Done when: rule fixed in writing before the final test runs (E2).
+
+E2. FINAL TEST RUNS WITH SEEDS + CONFIDENCE INTERVALS  difficulty: LOW  impact: CRITICAL
+  Run the frozen pipeline (E0) with the frozen rule (E1) on both full test
+  sets, 3 seeds each. Observed run-to-run spread is 0.02-0.04 F1, larger
+  than the 4B-vs-8B margin.
+  - Report mean +- std over seeds AND a paired bootstrap 95% CI per system
+    (resample pairs; compare systems on the same resamples).
+  - Significance vs Qwen3-8B pure: paired bootstrap or McNemar on the same
+    pairs.
+  Cost: 3 x (java ~11 h + rust ~7 h) on 2 A100s ~= 110 GPU-h. Bootstrap is
+  CPU-only.
+  Done when: table of mean F1 / CI for every system in section 0.
+
+E3. COMPUTE-COST ACCOUNTING                        difficulty: LOW  impact: CRITICAL
+  "Compact" must mean cheap to RUN, not only few parameters: MCTS makes many
+  calls and compiles/executes code per pair, while 8B pure is one call.
+  For every system in the table, report per pair: generated tokens, prompt
+  tokens, LLM calls, wall-clock, GPU-seconds, peak GPU memory, and number of
+  executions/compilations. Then plot F1 vs GPU-seconds/pair.
+  - Most of this is recoverable from existing logs (vLLM throughput lines,
+    job elapsed times) and the trees (count nodes / code steps).
+  - Run the 4B pipeline on 1 GPU (a 1-GPU config exists) -- a 4B model on
+    one GPU is the concrete "compact" deployment story.
+  Known so far: 4B MCTS ~22 s/pair (java), ~20 s/pair (rust) wall-clock on
+  2 A100s. Pure-inference timings still to be extracted.
+  Done when: cost columns filled in the main table + one F1-vs-cost figure.
+
+E4. STRONGER BASELINES ON THE SAME PAIRS            difficulty: MED  impact: CRITICAL
+  "Near SOTA" needs the strongest reasonable competitors on OUR exact pairs.
+  a) Large open LLM, single pass: Qwen3-32B and/or Qwen2.5-Coder-32B with the
+     same pure-inference prompt (pure_inference/, run_clccd_paper_prompts.py).
+     Needs model download (~65 GB each -- quota now 489/954 GB) and 2-4 GPUs.
+  b) Qwen3-8B pure with thinking mode on (if the pure runs used it off) --
+     the fairest "just use a bigger model" competitor.
+  c) Frontier API model on both languages (e.g. GPT-4-class) using the CLCCD
+     paper's best prompt (sp2). Gives the FIRST python-rust external number.
+     Cost: ~3000 API calls; check budget + terms.
+  Done when: every competitor has java + rust F1 on the same pairs, with
+  the same metrics as E2.
+
+
+--------------------------------------------------------------------------------
+P1 -- REVIEWERS WILL ASK (high impact, medium effort)
+--------------------------------------------------------------------------------
+
+E5. ABLATIONS: WHERE DOES THE GAIN COME FROM?       difficulty: MED  impact: HIGH
+  The current "MCTS" is 2 rollouts x 2 samples; search scoring has no effect
+  there (MCTS_SEARCH_SCORING.md). Separate the components, all on Qwen3-4B,
+  frozen rule:
+    (a) pure single pass                                    [have]
+    (b) 1 path WITH execution (iterations 1)                [new config]
+    (c) k=2 paths WITHOUT execution (self-consistency;
+        disable the tool / strip code steps)                [needs a switch]
+    (d) current 2x2 search WITH execution                   [= E2]
+    (e) larger budget: iterations 4 and 8                   [config change]
+  Tells the paper whether the contribution is execution, aggregation, or
+  search. If (d) ~= (b)+(c) and (e) adds nothing, drop "MCTS" as a claimed
+  contribution and call it execution + multi-path aggregation.
+  Cost: ~4 new configs x (java + rust) ~= 150 GPU-h (1 seed; seeds for the
+  winner only).
+
+E6. FINE-TUNED ENCODER BASELINE                     difficulty: MED  impact: HIGH
+  A fine-tuned 125M encoder (GraphCodeBERT / UniXcoder) is SMALLER than 4B;
+  if it scores close, "compact" stops being an advantage. The repo only has
+  a zero-shot GraphCodeBERT (java 0.7257 / rust 0.3731, frozen embeddings).
+  Fine-tune on CLCCD's train split (disjoint from our test pairs; verify
+  with check_leakage.py), evaluate on our pairs. C4 (cloned, no checkpoint)
+  is an option for java only.
+  Cost: a few GPU-hours.
+
+E7. METRICS + PER-SOURCE BREAKDOWN                  difficulty: LOW  impact: HIGH
+  Rust is 1:3 imbalanced -> add MCC and balanced accuracy for every system.
+  Break java down by source (CodeNet vs XLCoST) -- the CLCCD paper does.
+  CPU-only, from existing outputs.
+
+E8. EXECUTION EVIDENCE + ERROR ANALYSIS             difficulty: LOW  impact: HIGH
+  Supports the paper's central mechanism. From the trees:
+  - % pairs where Code 2 actually compiled and ran; compile-failure rate by
+    language; % trees that took the print("not code clones") shortcut.
+  - F1 split by "both programs executed" vs "reasoned only".
+  - Manual categorisation of ~50 errors (FN: false "different" claims,
+    wrong self-written tests; FP: narrow tests that miss the difference).
+  CPU-only + a few hours of reading.
+
+
+--------------------------------------------------------------------------------
+P2 -- STRENGTHENS THE STORY (higher effort or conditional)
+--------------------------------------------------------------------------------
+
+E9. HARD-NEGATIVE TEST SET                          difficulty: HIGH  impact: MED-HIGH
+  Current non-clones are DIFFERENT problems -> easy to reject, precision
+  ~1.0, and it favours clone-leaning aggregation rules. Build same-problem
+  near-misses: CodeNet stores submission status, so pair an Accepted Python
+  solution with a Wrong Answer target-language solution of the SAME problem.
+  Evaluate the best 4B system + the main baselines. This is also where
+  execution should shine (behavioural bugs need running to detect).
+  Cost: data construction (1-2 days) + runs.
+
+E10. SFT / DISTILLATION (already in flight)         difficulty: MED  impact: MED
+  Jobs 4014872-> (Track A strict) and 4014955-> (CodeNet java_rust v2),
+  see SESSION_STATUS_2026-09-26.txt. Only include in the paper if the fixed
+  checkpoints beat base on held-out data. Fits the compact story
+  ("distilled 4B"), but teacher traces are Claude-written -> disclose as
+  distillation and check usage terms (SFT_DATA_PROCESS 9k).
+
+E11. SAME PIPELINE ON QWEN3-8B                      difficulty: LOW  impact: MED
+  Answers "why not run your pipeline on 8B?". An older 8B MCTS java run
+  scored 0.8736 (below 8B pure) -- rescore it under the frozen rule, rerun
+  if the pipeline changed. Either result is reportable: "execution closes
+  the gap for small models; larger models need it less".
+
+E12. FIRST PYTHON-RUST NUMBERS FOR THE CLCCD PAPER'S MODELS  difficulty: MED  impact: MED
+  Their inference code is language-agnostic (EXTERNAL_BASELINES_COMPARISON
+  section 3). Running GPT-3.5 + LLaMA2-7B on our rust pairs gives a direct
+  link to the published benchmark.
+
+
+--------------------------------------------------------------------------------
+P3 -- OPTIONAL
+--------------------------------------------------------------------------------
+E13. Qwen3 size sweep (0.6B / 1.7B / 4B) with the pipeline -- "how small can
+     it go". Only if E2-E4 land well.
+E14. A third language pair (python-C++ or python-Go). Not needed: the paper
+     does not claim generality.
+E15. text-embedding-3-large on our exact 1800 java pairs with a dev/test
+     protocol matching E1 (its 0.9728 is on a 360-pair split).
+
+
+--------------------------------------------------------------------------------
+SUMMARY TABLE (rough GPU-hours on A100s; CPU-only work counted as 0)
+--------------------------------------------------------------------------------
+  ID   Pri  Experiment                                 Difficulty  Impact    GPU-h
+  E0   P0   Freeze pipeline (harness fix, config)      low-med     critical  ~5
+  E1   P0   Validate aggregation rule on dev set       med         critical  ~10
+  E2   P0   Final test runs, 3 seeds + bootstrap CIs   low         critical  ~110
+  E3   P0   Compute-cost accounting + 1-GPU run        low         critical  ~20
+  E4   P0   Strong baselines (32B open, 8B think, API) med         critical  ~40 + API
+  E5   P1   Ablations (exec / samples / budget)        med         high      ~150
+  E6   P1   Fine-tuned encoder baseline                med         high      ~10
+  E7   P1   MCC / balanced acc / per-source            low         high      0
+  E8   P1   Execution evidence + error analysis        low         high      0
+  E9   P2   Hard-negative test set                     high        med-high  ~40
+  E10  P2   SFT distillation (in flight)               med         med       queued
+  E11  P2   Pipeline on Qwen3-8B                       low         med       ~40
+  E12  P2   CLCCD paper models on python-rust          med         med       ~10 + API
+  E13  P3   Qwen3 size sweep                           med         low-med   ~60
+  E14  P3   Third language pair                        high        low       --
+  E15  P3   text-embedding-3-large, matched protocol   low         low       API
+
+Order of work: E0 -> E1 -> (E2, E3, E4 in parallel) -> E7/E8 (free, from E2
+outputs) -> E5 -> E6 -> P2 as time allows.
+
+Decision gate after E1+E2: if 4B+pipeline does NOT beat Qwen3-8B pure with
+non-overlapping CIs under the validated rule, reframe the headline to
+"matches an 8B model at half the parameters" and lean on cost (E3) and the
+rust gain over the same 4B model (0.48 -> ~0.9) rather than on SOTA.
+================================================================================
