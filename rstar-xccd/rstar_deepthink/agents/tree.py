@@ -12,7 +12,7 @@ from omegaconf import DictConfig, OmegaConf
 from timeout_decorator import timeout
 from rstar_deepthink.config import BaseConfig
 from rstar_deepthink.nodes.base_node import BaseNode
-from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, extract_code2_source, stage_code2, mentions_code2_execution, sanitize_input, is_python_code, snapshot_dir, cleanup_generated_code
+from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, extract_code2_source, stage_code2, mentions_code2_execution, sanitize_input, is_python_code, snapshot_dir, cleanup_generated_code, execute_code2_enabled, CODE2_DISABLED_MESSAGE
 from rstar_deepthink.constants import TIMEOUT_SECONDS, TIMEOUT_MESSAGE, CODE_END, OUTPUT_END, CODE, ANSWER
 
 
@@ -181,7 +181,8 @@ def code_execution(
         if action == "python_interpreter" and mentions_code2_execution(sanitized_code):
             code2_lang, code2_source = extract_code2_source(question)
             if code2_source:
-                code2_status = stage_code2(code2_lang, code2_source)
+                code2_status = (stage_code2(code2_lang, code2_source) if execute_code2_enabled()
+                                else CODE2_DISABLED_MESSAGE)
 
         try:
             observation = str(tool_func(action_input)).strip()

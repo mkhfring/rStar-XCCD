@@ -149,6 +149,9 @@ class BaseConfig:
         default="v1", metadata={"help": "search-time step scoring: 'v1' = assert-consistency-score "
                                          "(unchanged default), 'v2' = rstar_deepthink/agents/step_scoring.py"}
     )
+    execute_code2: bool = field(
+        default=True, metadata={"help": "stage/compile Code 2 when a step tries to run it; False = python-only ablation arm (the step is told Code 2 cannot be executed)"}
+    )
     rust_crate_check: str = field(
         default="legacy", metadata={"help": "'legacy' (pre-2026-09-26 regex) or 'strict' (comments stripped, local mods/types excluded) external-crate detection for Rust Code 2; see python_tool.rust_external_crates"}
     )

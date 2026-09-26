@@ -32,6 +32,28 @@ UPDATE 2026-09-26 02:10 -- progress since this file was written:
     (Qwen3/run_eval_smoke50_e0_frozen_qwen3_4b_1gpu.sh) prints "SMOKE:"
     lines + WALLCLOCK_SECONDS at the end. Commit + tag still pending.
 
+UPDATE 2026-09-26 02:40 -- PROMPT FINDING + ABLATION SUBMITTED:
+  - E0 smoke 4017925 ran fine (944 s / 50 pairs on 1 GPU) but was
+    inconclusive: the model never tried to run Code 2 on the 16 target pairs.
+  - ROOT CAUSE: every Qwen3-4B number so far used the GENERIC prompt
+    (mcts_prompt.json + few_shot_imprvoed.json), whose 2 examples run only
+    Code 1 or take the shortcut. Base Qwen3-4B tried to run Code 2 in 0.3%
+    (rust) / 0.9% (java) of trees. The language-specific prompts
+    (mcts_prompt_code2_exec_python_{java_v2,rust_v3} + matching few-shots),
+    which ARE the methodology.tex Fig. prompt and whose examples run both
+    programs, were only ever used for Qwen2.5-Coder-3B/7B -- there Code 2 was
+    run in 20-39% of trees. Qwen3-4B has never been run with them.
+  - Ablation (plan E5, option 3), base Qwen3-4B, 1 GPU, full test sets:
+      4018934 q3-4b-ablation-pyonly-java     config/qwen3_4b_ablation_pyonly_1gpu.yaml
+      4018935 q3-4b-ablation-pyonly-rust     (generic prompt, execute_code2 False)
+      4018936 q3-4b-ablation-dualexec-java   config/qwen3_4b_ablation_dualexec_java_1gpu.yaml
+      4018937 q3-4b-ablation-dualexec-rust   config/qwen3_4b_ablation_dualexec_rust_1gpu.yaml
+    Launchers Qwen3/run_eval_ablation_{pyonly,dualexec}_{java,rust}_qwen3_4b_1gpu.sh
+    print "ABLATION ..." (Code 2 tried/compiled/blocked) and rescore_runs.py
+    --calibrate output at the end. 24 h limit, resume by resubmitting.
+  - New config key execute_code2 (default True; python-only arm = False).
+    NOT yet committed (e0-frozen tag predates it).
+
 PART A -- JOBS IN THE QUEUE (submitted 2026-09-25/26, all PENDING at writing)
 --------------------------------------------------------------------------------
 Logs: Qwen3/<job-name>_<jobid>.log.{out,err}   (all launchers live in Qwen3/)

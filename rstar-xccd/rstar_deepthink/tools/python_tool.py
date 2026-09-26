@@ -217,6 +217,23 @@ RUST_CRATE_CHECK_ENV = "RSTAR_RUST_CRATE_CHECK"
 RUST_CRATE_CHECK = os.environ.get(RUST_CRATE_CHECK_ENV, "legacy")
 
 
+# Ablation switch (EXPERIMENT_PLAN E5 "python-only" arm): when off, Code 2 is
+# never staged or compiled, and a step that tries to run it is told so --
+# the same fallback the model gets for Rust with unavailable crates. Same
+# environment-variable mechanism as RUST_CRATE_CHECK, for the spawn pool.
+EXECUTE_CODE2_ENV = "RSTAR_EXECUTE_CODE2"
+CODE2_DISABLED_MESSAGE = ("Code 2 cannot be executed in this setting. "
+                          "Reason about its expected behavior instead of executing it.")
+
+
+def execute_code2_enabled() -> bool:
+    return os.environ.get(EXECUTE_CODE2_ENV, "1") == "1"
+
+
+def set_execute_code2(enabled: bool) -> None:
+    os.environ[EXECUTE_CODE2_ENV] = "1" if enabled else "0"
+
+
 def set_rust_crate_check(mode: str) -> None:
     global RUST_CRATE_CHECK
     if mode not in ("legacy", "strict"):
