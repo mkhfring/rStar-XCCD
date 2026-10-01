@@ -1,0 +1,46 @@
+# SCB SEED RUN (2026-10-01): = qwen3_4b_ablation_pyonly_1gpu.yaml with seed 2 (the original run used the engine default seed 0).
+# ABLATION arm A: PYTHON-ONLY (EXPERIMENT_PLAN E5). = qwen3_4b_frozen_e0_1gpu.yaml + execute_code2 False.
+# Generic prompt + few_shot_imprvoed.json (examples run Code 1 only / shortcut),
+# and Code 2 is never executed: a step that tries is told it cannot be run.
+
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_imprvoed.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt.json"
+
+swap_space: 8
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 2
+best_of: 2
+is_sampling: False
+iterations: 2
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 2
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 1
+
+rust_crate_check: "strict"
+
+execute_code2: False
+seed: 2

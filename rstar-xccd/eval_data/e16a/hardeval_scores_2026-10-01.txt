@@ -15,6 +15,12 @@
   Qwen3-4B sp2 think                     clone-recall 0.847 | FPR hard 0.673 cross 0.000 | F1 hard 0.6720 cross 0.9170 | resp 100.0%
   phi-4 sp2 nothink                      clone-recall 0.920 | FPR hard 0.760 cross 0.000 | F1 hard 0.6866 cross 0.9583 | resp 100.0%
 == rust: 90 pairs {'clone': 36, 'hn_output': 36, 'cross': 18} (multi-answer suspects excluded)
+ SCB run Qwen3-4B.hard-locked-ext.def-khajezad_gpu.20261001130623.jso (90 trees)
+  SCB old                                clone-recall 0.722 | FPR hard 0.222 cross 0.000 | F1 hard 0.7429 cross 0.8387 | resp 100.0%
+  SCB current                            clone-recall 0.694 | FPR hard 0.194 cross 0.000 | F1 hard 0.7353 cross 0.8197 | resp 100.0%
+  SCB tested                             clone-recall 1.000 | FPR hard 1.000 cross 0.611 | F1 hard 0.6667 cross 0.8675 | resp 100.0%
+  SCB majority                           clone-recall 0.583 | FPR hard 0.111 cross 0.000 | F1 hard 0.6885 cross 0.7368 | resp 100.0%
+  SCB triage only (any real test)        clone-recall 1.000 | FPR hard 1.000 cross 0.667 | F1 hard 0.6667 cross 0.8571 | resp 100.0%
  SCB run Qwen3-4B.hard-locked-pyonly.def-khajezad_gpu.20261001042431. (90 trees)
   SCB old                                clone-recall 0.889 | FPR hard 0.778 cross 0.056 | F1 hard 0.6667 cross 0.9275 | resp 100.0%
   SCB current                            clone-recall 0.583 | FPR hard 0.361 cross 0.000 | F1 hard 0.6000 cross 0.7368 | resp 100.0%

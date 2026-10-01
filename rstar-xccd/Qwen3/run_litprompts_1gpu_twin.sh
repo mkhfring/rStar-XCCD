@@ -22,5 +22,6 @@ export VLLM_USE_V1=0
 source ../venv-qwen3/bin/activate
 echo "ARGS: $*"
 START=$(date +%s)
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 python pure_inference/run_clccd_paper_prompts.py --tp 1 "$@"
 echo "WALLCLOCK_SECONDS: $(( $(date +%s) - START ))"

@@ -25,6 +25,24 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-01 12:30: COMMITTED + PUSHED (user OK): code repo branch claude-session-2026-09-24
+      @ 0cde755 (origin), paper repo main @ 174f0c4 (origin). Later commits: see git log.
+      RUST LOCKED EXTENSION DONE (4392875): F1 .735 (clone-rec .694, bug->clone .194) vs SCB
+        .674 (.806), Qwen-think .659 (.694), phi-4 .653 (.778). n=36/36 -> wide CIs.
+      SUBMITTED (user OK), all twin-guard pairs (khajezad / fard):
+        SCB seeds (config qwen3_4b_ablation_pyonly_seed{1,2}_1gpu.yaml; original run = engine seed 0):
+          seed1 java 4410642/43  seed2 java 4410644/45  seed1 rust 4410648/49  seed2 rust 4410650/51
+          launchers Qwen3/run_eval_seed{1,2}_pyonly_{L}_qwen3_4b_1gpu.sh, branch ablation-pyonly-seed{s}
+        EXTENSION on full CLCCD: java 4410646/47 (v3, 22 h limit), rust 4410652/53 (v4, 24 h)
+          launchers Qwen3/run_eval_clccd_ext_{L}_qwen3_4b_1gpu.sh, branch clccd-ext
+        COST on 100-pair subsets eval_data/e16a/cost100_python_{L}_CLCCD.jsonl (random, fixed):
+          SCB java 4410771/77 rust 4410785/89; EXT java 4410779/83 rust 4410792/97 (branches cost-scb, cost-ext)
+          Qwen3-4B think java 4410799/802 rust 4410809/12; Qwen3-8B think java 4410803/04 rust 4410814/15;
+          phi-4 (2 GPU) java 4410805/08 rust 4410816/18 (runner --datafile).
+          Measure: WALLCLOCK per pair (minus model load from the vLLM log), weights GiB from the vLLM
+          log, generated tokens counted from saved outputs. GPU name printed at job start.
+      Score seeds: rescore_runs.py <run> --lang L (tested rule = frozen); bootstrap over seeds+pairs.
+      Score ext CLCCD: rescore_runs.py <run> --lang L (current rule = frozen for the extension).
   *** 2026-10-01 11:50: CONFIRMATION RESULTS (locked sets; rules fixed beforehand).
       RUST PROMPT: v4 chosen on the pilot (233 common pairs, current rule: F1 .784 vs .726 v3,
         recall .750 vs .663, FPR-hard .161 both, harness 88% vs 75%). 4361611 TIMEOUT at 247/250

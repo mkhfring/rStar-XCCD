@@ -197,6 +197,9 @@ def main():
     ap.add_argument("--max_model_len", type=int, default=16384)
     ap.add_argument("--max_tokens", type=int, default=768)
     ap.add_argument("--split", choices=["test", "dev", "hard", "hardeval"], default="test")
+    ap.add_argument("--datafile", default=None,
+                    help="explicit data file with {L} for the language (overrides --split), e.g. the "
+                         "100-pair cost subsets eval_data/e16a/cost100_python_{L}_CLCCD.jsonl")
     ap.add_argument("--enable_thinking", action="store_true")
     ap.add_argument("--temperature", type=float, default=0.3)
     ap.add_argument("--top_p", type=float, default=1.0)
@@ -256,7 +259,9 @@ def main():
         )
 
     for dataset in args.datasets:
-        if args.split in ("dev", "hard", "hardeval"):
+        if args.datafile:
+            src = REPO_ROOT / args.datafile.format(L=dataset)
+        elif args.split in ("dev", "hard", "hardeval"):
             src = REPO_ROOT / "eval_data" / "e16a" / f"{args.split}_python_{dataset}_codenet.jsonl"
         else:
             src = REPO_ROOT / "eval_data" / f"test_python_{dataset}_CLCCD.jsonl"
@@ -299,7 +304,7 @@ def main():
                     preds[i] = None if not votes else (
                         "clone" if votes.count("clone") > votes.count("non-clone") else "non-clone")
 
-            stem = src.name if args.split in ("dev", "hard", "hardeval") else f"test_python_{dataset}_CLCCD.jsonl"
+            stem = src.name if (args.datafile or args.split in ("dev", "hard", "hardeval")) else f"test_python_{dataset}_CLCCD.jsonl"
             out_path = out_dir / f"{stem}.{args.model_dir}.{prompt_tag}.{variant}.{run_ts}.jsonl"
             with open(out_path, "w", encoding="utf-8") as f:
                 for r, raw, pred, ar, ap_ in zip(records, raws, preds, all_raws, all_preds):
