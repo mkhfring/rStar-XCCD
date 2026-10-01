@@ -1,0 +1,11 @@
+lang  system                       GPUs  wall_s  load_s  s/pair GPU-s/pair weights GiB gen tok/pair steps/pair  GPU
+java  SCB (python-only, tested)       1    2137      38    20.8       20.8        7.56         1064       11.3  NVIDIA A100-SXM4-40GB
+java  Extension (auto-code2)          1    2019      30    19.7       19.7        7.56          906       10.8  NVIDIA A100-SXM4-40GB
+java  Qwen3-4B sp2 think              1     258      29     2.3        2.3        7.56          845        nan  NVIDIA A100-SXM4-40GB
+java  Qwen3-8B sp2 think              1     325      38     2.9        2.9       15.27          985        nan  NVIDIA A100-SXM4-40GB
+java  phi-4 sp2 (2 GPU)               2     504     231     2.7        5.5       13.77          143        nan  NVIDIA A100-SXM4-40GB
+rust  SCB (python-only, tested)       1    1975      31    19.2       19.2        7.56         1111       11.0  NVIDIA A100-SXM4-40GB
+rust  Extension (auto-code2)          1    2318      31    22.6       22.6        7.56         1043       12.5  NVIDIA A100-SXM4-40GB
+rust  Qwen3-4B sp2 think              1     200      29     1.7        1.7        7.56         1027        nan  NVIDIA A100-SXM4-40GB
+rust  Qwen3-8B sp2 think              1     202      33     1.7        1.7       15.27         1074        nan  NVIDIA A100-SXM4-40GB
+rust  phi-4 sp2 (2 GPU)               2     422     230     1.9        3.8       13.77          181        nan  NVIDIA A100-SXM4-40GB

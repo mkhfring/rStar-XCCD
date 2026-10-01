@@ -25,6 +25,14 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-01 15:50: COST DONE -> eval_data/e16a/cost_summary_2026-10-01.txt (script cost_summary.py).
+      100 pairs/lang, A100-40GB, load time removed. GPU-s/pair java/rust; gen tok/pair; weights:
+        SCB 20.8/19.2 s, ~1,090 tok, 7.6 GiB | Extension 19.7/22.6 s, ~975 tok, 7.6 GiB
+        Qwen3-4B think 2.3/1.7 s, ~935 tok | Qwen3-8B think 2.9/1.7 s, ~1,030 tok, 15.3 GiB
+        phi-4 5.5/3.8 GPU-s (2 GPUs), ~160 tok, 27.5 GiB total.
+      -> claim MEMORY (1/2 of 8B, 1/4 of phi-4) and tokens ~= thinking mode; NOT speed
+         (SCB ~7-12x slower wall-clock: sequential ~11-step search + code runs, unbatched).
+      Seeds + extension-on-CLCCD (6 runs) RUNNING since ~14:55.
   *** 2026-10-01 12:30: COMMITTED + PUSHED (user OK): code repo branch claude-session-2026-09-24
       @ 0cde755 (origin), paper repo main @ 174f0c4 (origin). Later commits: see git log.
       RUST LOCKED EXTENSION DONE (4392875): F1 .735 (clone-rec .694, bug->clone .194) vs SCB
