@@ -162,7 +162,7 @@ def main():
                 examples.append(m["p_id1"])
         for s in seen:
             tree[kind][s] += 1
-        tree[kind]["pred_tested:" + RULES["tested"](r["rstar"])] += 1
+        tree[kind]["pred_tested:" + str(RULES["tested"](r["rstar"]))] += 1
     print(f"== {L}  ({run.split('/')[-1][-40:]})  trees: {dict(n)}")
     for kind in ("hn_output", "clone", "cross"):
         print(f"-- {kind}: trajectories {leaf[kind]['TOTAL']}")
