@@ -408,3 +408,22 @@ PART J -- DOCUMENTATION INDEX + CURRENT JOB TRACKER (2026-09-24 ~23:40)
   Other jobs unchanged: 3757227, 3921168, 3940133-3940139 (fard copies
   running), new-rule runs 3945722/3945737 (rust), 3945738/3945744 (java).
 ================================================================================
+
+  UPDATE 23:50: 3757227 at 1179/1200 with ~49 min left (~18 q/h) -> will time out.
+  Queued resume 3946948 (Qwen3/run_eval_clccd_rust_codenet_rust_only_v1_qwen3_4b_2gpu_resume.sh,
+  same account/branch/model, no --no-resume, 12h), --dependency=afternotok:3757227:
+  runs only if 3757227 times out/fails; appends to ...def-khajezad_gpu.20260923004027.jsonl
+  and then writes the final _result. Score it with rescore_runs.py (current rule) --
+  base under the current rule is 0.7952, not 0.8739.
+
+  UPDATE 2026-09-25 00:20: 3757227 COMPLETED (1-23:42:59, 17 min spare); resume 3946948
+  auto-cancelled (dependency not met). _result F1 0.8169 is over JUDGED instances only
+  (133/1200 no judgment, 11%); base had 0 no-judgment, so compare with rescore_runs.py
+  (no-judgment clones count as misses): codenet-rust-only-v1 full 0.7646 / rl_heldout
+  0.8519 / strict 0.7677 vs base 0.7952 / 0.8039 / 0.8000 and codenet-all-v1 0.8498 /
+  0.8440 / 0.8598 (current rule). Calibration keeps 'current' for it (tested hurts on
+  rl_train). Report: ...20260923004027.jsonl_result_NEWRULE_tested_agg.
+  !! Second comparability trap: _result F1 excludes abstentions; fine-tuned models
+  abstain much more than base. Always report response rate with F1.
+  3945991 SFT COMPLETED (68 optimizer steps, loss 1.09 -> 0.12); evals 3945992/3 queued.
+  Java new-rule run: 3945744 (fard) RUNNING, 3945738 cancelled by twin guard.

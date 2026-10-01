@@ -1,0 +1,162 @@
+================================================================================
+ Qwen3-4B "hard" rejection-sampling SFT + heldout eval -- status snapshot
+ Written 2026-09-22 (session continuity notes; check `sacct -j <id>` for
+ current truth, this is a point-in-time record in case the session is lost)
+================================================================================
+
+SUMMARY: mined a small "hard" SFT dataset from Qwen3-4B's own MCTS failures,
+fine-tuned two checkpoints on it, and are now evaluating both (plus a
+same-subset baseline) on the untouched CLCCD heldout split. In parallel, a
+much larger "codenet" mining run is in flight to eventually build a
+Track-B-scale SFT dataset (see section 5).
+
+All paths below are relative to:
+  REPO = /project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD/rstar-xccd
+Launcher scripts live in REPO/Qwen3/. Logs are named %x_%j.log.{out,err}
+and land wherever `sbatch` was invoked from (Qwen3/ for everything below).
+
+
+1. MINING (source data for the "hard" SFT set)
+--------------------------------------------------------------------------------
+Ran on the "hard" question files -- eval_data/failed_qwen3_4b_rl_train_{java,rust}.jsonl
+(108 java / 83 rust questions: the subset of rl_train Qwen3-4B's own frozen
+final-for-clccd config got WRONG), config
+config/my_test_mcts_qwen3_4b_depth_16_1gpu_sampling_rl_mining.yaml
+(is_sampling=True, n_generate_sample=best_of=4, iterations=3, temp=0.9).
+
+  job 3609245 (hard-java-fard)  COMPLETED  108/108 judged, 0 errors
+  job 3609249 (hard-rust-fard)  COMPLETED  83/83 judged, 0 errors
+  -> output: eval_data/failed_qwen3_4b_rl_train_{java,rust}_depth_16.jsonl.mcts.Qwen3-4B.rl-mining-hard-v1.def-fard_gpu.20260921192803.jsonl
+
+  NOTE: earlier attempts (job 3606754/3606759, ~18:17) hit a vLLM V1 /
+  best_of incompatibility and produced an ALL-SKIPPED file (same QAF/BRANCH
+  but timestamp ...181746.jsonl) -- that file was NOT used for anything
+  below. Root cause + fix: missing `export VLLM_USE_V1=0` before venv
+  activation (every _fard script now has it).
+
+Curated via score_rl_rollouts.py's safe/dangerous filter:
+  java: 22/108 questions (20.4%) safe, 40 safe leaves -> eval_data/sft_hard_v1_java.jsonl
+  rust: 12/83  questions (14.5%) safe, 19 safe leaves -> eval_data/sft_hard_v1_rust.jsonl
+Yield is much lower than this project's other mining tracks (~90%+) because
+every question here is one the model already failed once -- expected, not
+a bug.
+
+
+2. FINE-TUNING (two checkpoints, both from Qwen3-4B base)
+--------------------------------------------------------------------------------
+Both use venv-qwen3 (NOT the base venv -- base venv's transformers 4.45.2
+predates Qwen3 support entirely), --attn_impl sdpa + --gradient_checkpointing
+True (NOT the default eager attn_impl -- see "gotchas" below), FSDP full_shard
+auto_wrap on Qwen3DecoderLayer, 4x A100, def-khajezad_gpu / def-fard_gpu twin
+pair (whichever starts first wins, see launcher scripts for the guard logic).
+
+  2a) qwen3-4b-hard-v1 -- java+rust COMBINED (59 examples)
+      Launchers: Qwen3/run_sft_hard_v1_qwen3_4b_4gpu.sh (+_fard.sh)
+      Recipe: batch=2 x 4 GPUs x grad_accum=1 (effective batch 8), 4 epochs
+              -> ~8 steps/epoch, 32 steps total
+      job 3645950 (fard) COMPLETED 00:08:23, checkpoint-32, train_loss ~0.30
+      -> REPO/sft_checkpoints/qwen3-4b-hard-v1/  (full HF checkpoint, fp32
+         safetensors, ~17.6GB -- loads fine, just 2x bigger on disk than
+         necessary; not corrupted, verified directly)
+
+  2b) qwen3-4b-hard-java-v1 -- java ONLY (40 examples)
+      Launchers: Qwen3/run_sft_hard_java_v1_qwen3_4b_4gpu.sh (+_fard.sh)
+      Recipe: same as above (batch=2 x 4 GPUs x grad_accum=1, 4 epochs)
+      job 3645952 (fard) COMPLETED 00:06:42, checkpoint-20, train_loss ~0.30
+      -> REPO/sft_checkpoints/qwen3-4b-hard-java-v1/
+
+GOTCHAS HIT AND FIXED (all already applied in the launcher scripts as they
+stand now -- re-read if resubmitting anything to confirm they're still
+there):
+  a) OOM with the Qwen2.5-7B-derived recipe's default eager attn_impl --
+     this was NEVER a working recipe even for the original 7B model (jobs
+     3081888/3121560/3138488 for q2.5-7b-sft-trackB ALL failed too, one via
+     the same eager-attention OOM; SFT_DATA_PROCESS.txt's "in flight" note
+     was simply never updated). Fix: --attn_impl sdpa --gradient_checkpointing True.
+  b) Lost checkpoints: the launcher cd's into a node-local $SLURM_TMPDIR
+     scratch dir via a symlink farm over REPO; sft_checkpoints/ didn't
+     exist in REPO at symlink-farm-build time, so a RELATIVE --output_dir
+     wrote the trained model to ephemeral node storage, wiped when the job
+     ended. Jobs 3632724/3632727 COMPLETED with real decreasing loss but
+     0 recoverable output -- confirmed lost. Fix: OUTPUT_DIR is now an
+     ABSOLUTE path, "$REPO/sft_checkpoints/...".
+  c) qwen3-4b-hard-v1's first successful-looking run (3632724) only did 2
+     real optimizer steps (effective batch 128 >> 59-example dataset) --
+     fixed by shrinking batch/grad_accum (see 2a).
+
+
+3. EVALUATION (in flight as of this writing -- check `sacct` for current state)
+--------------------------------------------------------------------------------
+Rule (SFT_DATA_PROCESS.txt section 2): mining/training only ever touched
+eval_data/rl_train_python_{java,rust}_CLCCD.jsonl, so evaluation MUST use
+eval_data/rl_heldout_python_{java,rust}_CLCCD.jsonl ONLY (360 java / 240
+rust questions) -- never rl_train or the full CLCCD test file (leakage).
+
+Same scoring config as the published FINAL_FOR_CLCCD.md numbers: depth=16,
+n_generate_sample=2, is_sampling=False, 2 rollouts, assert-consistency-score
+(config/my_test_mcts_qwen3_4b_depth_16_2gpu_no_sampling.yaml), 2x A100.
+
+IMPORTANT: FINAL_FOR_CLCCD.md's published 0.9454 (java) / 0.8739 (rust) are
+on the FULL 1800/1200-question test files, NOT this 360/240 heldout subset
+-- NOT a valid baseline to compare the fine-tuned numbers against. That's
+why two extra "baseline" (un-fine-tuned Qwen3-4B) eval jobs were added below
+on the SAME heldout files, so there's a same-subset apples-to-apples number.
+
+  Launchers: Qwen3/run_eval_heldout_{java,rust}_baseline_qwen3_4b_2gpu.sh (+_fard.sh)
+             Qwen3/run_eval_heldout_{java,rust}_hard_v1_qwen3_4b_2gpu.sh (+_fard.sh)
+             Qwen3/run_eval_heldout_java_hard_java_v1_qwen3_4b_2gpu.sh (+_fard.sh)
+
+  | job (fard)| model                  | eval file (heldout)| branch tag           | status as of last check |
+  |-----------|------------------------|---------------------|----------------------|--------------------------|
+  | 3655714   | models/Qwen3-4B (base) | java, 360 q         | heldout-baseline     | RUNNING, 87/360          |
+  | 3655716   | models/Qwen3-4B (base) | rust, 240 q         | heldout-baseline     | RUNNING, 95/240          |
+  | 3655717   | sft_checkpoints/qwen3-4b-hard-v1      | java, 360 q | heldout-hard-v1      | RUNNING, 22/360          |
+  | 3655718   | sft_checkpoints/qwen3-4b-hard-v1      | rust, 240 q | heldout-hard-v1      | RUNNING, 25/240          |
+  | 3655719   | sft_checkpoints/qwen3-4b-hard-java-v1 | java, 360 q | heldout-hard-java-v1 | RUNNING, 6/360           |
+
+  (Each also has a non-fard def-khajezad_gpu twin, IDs 3652942/3652943/
+  3652944/3652946/3652947 -- all already CANCELLED by the twin-guard since
+  the fard side started first in every case, as of this writing.)
+
+Result files land at (pattern):
+  eval_data/rl_heldout_python_{java,rust}_CLCCD.jsonl.mcts.<model_tag>.<branch>.<account>.<timestamp>.jsonl_result
+where <model_tag> is "Qwen3-4B" for baseline runs or "qwen3-4b-hard-v1" /
+"qwen3-4b-hard-java-v1" for the fine-tuned runs. `cat` the _result file (or
+grep "F1 score" across all of them) once jobs finish for the actual numbers.
+
+WHAT TO COMPARE:
+  - 3655717 (hard-v1, java) vs 3655714 (baseline, java) vs 3655719 (hard-java-v1, java)
+    -- three-way: base model, combined-language fine-tune, java-only fine-tune
+  - 3655718 (hard-v1, rust) vs 3655716 (baseline, rust)
+    -- did training on rust's 19 examples (mixed into the combined 59-example
+    set) help or hurt rust heldout performance
+
+
+4. HOW TO CHECK STATUS AFTER RECONNECTING
+--------------------------------------------------------------------------------
+  squeue -u khajezad -o "%.10i %.40j %.12P %.20a %.8T %.10M %R"
+  sacct -j <jobid> --format=JobID,JobName%40,State,ExitCode,Elapsed,Start,End -X
+  grep "F1 score" REPO/eval_data/*_result   # once eval jobs finish
+  grep -oE "Main Processing: [0-9]+it" REPO/Qwen3/<jobname>_<jobid>.log.err | tail -1
+
+
+5. STILL IN FLIGHT / NOT YET DONE
+--------------------------------------------------------------------------------
+  - codenet mining (the REAL Track-B-scale data source, ~2000 q/language,
+    expected ~90% yield / thousands of examples based on the Qwen2.5-7B
+    precedent -- the 40/59-example "hard" SFT above was always a pilot,
+    not the real dataset):
+      job 3622157 (codenet-java-fard) RUNNING, ~1202/2000 as of last check
+      job 3622158 (codenet-java, khajezad twin) CANCELLED (twin-guard)
+      job 3622171 (codenet-rust-fard) RUNNING, ~1209/2000 as of last check
+      job 3622173 (codenet-rust, khajezad twin) CANCELLED (twin-guard)
+    Time budget 30h each. Once complete: run score_rl_rollouts.py --emit_sft
+    on both outputs (same pattern as section 1), then build a Track-B-style
+    SFT launcher (mirror Qwen3/run_sft_hard_v1_qwen3_4b_4gpu.sh, swap in the
+    codenet-curated data) -- remember the sdpa/gradient_checkpointing and
+    absolute-OUTPUT_DIR fixes from section 2's gotchas, they apply there too.
+  - 5 heldout eval jobs above: in flight, not yet read.
+  - No process reward model / iterative self-evolution round 2 has been
+    attempted (see conversation discussion of what a closer rStar-Math
+    replication would need) -- not started, no scripts exist for it yet.
+================================================================================

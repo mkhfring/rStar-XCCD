@@ -1,0 +1,7 @@
+LOCKED hard-negative evaluation set, created 2026-10-01 03:51 EDT by split_training_pool.py (seed 20261001). Do not tune against it.
+pairs 90 {'clone': 36, 'hn_output': 36, 'cross': 18}; eval problems 36; pool eval_data/e16a/pool_rust_len6000.jsonl
+Built with --max_len 6000: programs up to 6000 chars; 30 of the 36 problems involve a program longer than the CLCCD test maximum (2994 chars). Small set (36 problems): report with wide confidence intervals.
+sha256 37306384af9e4e11c8659b3d3837992be62c133c932bce23243721015b056566  eval_data/e16a/hardeval_python_rust_codenet.jsonl
+sha256 275f4d8dc3caba5537b9b663f9720da4d727d4ce0351e43d67e017cbac4d2800  eval_data/e16a/hardeval_python_rust_codenet_meta.jsonl
+eval problem ids: p00770 p02347 p02587 p02590 p02728 p02809 p02817 p02867 p03091 p03153 p03176 p03187 p03256 p03270 p03334 p03405 p03429 p03450 p03459 p03553 p03558 p03611 p03615 p03657 p03717 p03745 p03781 p03791 p03804 p03809 p03827 p03841 p03976 p03995 p04013 p04028
+NOTE 2026-10-01 03:55: 8 problems also appear in hardeval_java (see that manifest). The 22 problems shared with the Java training pool were REMOVED from pool_java_train.jsonl (no train/eval overlap for Java->Rust transfer).

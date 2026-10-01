@@ -407,6 +407,124 @@ def stage_code2(language: Optional[str], source: str, workdir: str = ".") -> str
     return ""
 
 
+# ---------------------------------------------------------------------------
+# Harness-side dual execution (TRAINING_PLAN_2026-09-30, step-1 follow-up).
+# Hard-negative pilot: with dual-exec prompts Qwen3-4B defined run_both() but
+# actually called Code 2 in only 10% (java) / 26% (rust) of trees. With
+# auto_code2 on, every input the model's code feeds to a Python program via
+# subprocess.run / subprocess.check_output is recorded; after the step the
+# harness runs Code 1 AND Code 2 on those same inputs and appends both outputs
+# to the observation. The model still chooses the inputs. Off by default, so
+# every existing config behaves as before. Environment variable for the spawn
+# pool, like EXECUTE_CODE2_ENV.
+AUTO_CODE2_ENV = "RSTAR_AUTO_CODE2"
+AUTO_CODE2_MAX_INPUTS = 4
+AUTO_CODE2_RUN_TIMEOUT = 10
+AUTO_CODE2_MARK = "[Harness]"
+
+
+def auto_code2_enabled() -> bool:
+    return os.environ.get(AUTO_CODE2_ENV, "0") == "1"
+
+
+def set_auto_code2(enabled: bool) -> None:
+    os.environ[AUTO_CODE2_ENV] = "1" if enabled else "0"
+
+
+class capture_python_inputs:
+    """Context manager: record the stdin `input=` of every subprocess.run /
+    subprocess.check_output call that starts a Python program (Code 1 or the
+    model's copy of it). Calls that run Code 2 themselves are not recorded."""
+
+    def __init__(self):
+        self.inputs: List[str] = []
+
+    def _record(self, args, kwargs):
+        cmd = args[0] if args else kwargs.get("args")
+        cmd_str = " ".join(map(str, cmd)) if isinstance(cmd, (list, tuple)) else str(cmd)
+        if "python" not in cmd_str or "candidate_code2" in cmd_str:
+            return
+        inp = kwargs.get("input")
+        if inp is None:
+            return
+        if isinstance(inp, bytes):
+            inp = inp.decode("utf-8", "replace")
+        if inp not in self.inputs:
+            self.inputs.append(inp)
+
+    def __enter__(self):
+        self._run, self._check_output = subprocess.run, subprocess.check_output
+        rec, run, chk = self._record, self._run, self._check_output
+
+        def run_patched(*args, **kwargs):
+            rec(args, kwargs)
+            return run(*args, **kwargs)
+
+        def check_output_patched(*args, **kwargs):
+            rec(args, kwargs)
+            return chk(*args, **kwargs)
+        subprocess.run, subprocess.check_output = run_patched, check_output_patched
+        return self
+
+    def __exit__(self, *exc):
+        subprocess.run, subprocess.check_output = self._run, self._check_output
+        return False
+
+
+def _short(text: str, n: int = 160) -> str:
+    text = text.strip()
+    return repr(text if len(text) <= n else text[:n] + "...")
+
+
+def auto_compare_code2(question: str, inputs: List[str], workdir: str = ".") -> str:
+    """Run Code 1 and Code 2 on the same inputs and describe the outputs.
+    Returns "" when there is nothing to do; a status line when Code 2 cannot run."""
+    inputs = [x for x in inputs if isinstance(x, str)][:AUTO_CODE2_MAX_INPUTS]
+    code1 = extract_code1_python(question)
+    lang, source = extract_code2_source(question)
+    if not inputs or not code1 or not source:
+        return ""
+    status = stage_code2(lang, source, workdir)
+    if lang == "java" and status.startswith("Code 2 (Java) compiled"):
+        cmd2 = ["java", "-cp", workdir, java_class_name(source) or "Code2"]
+    elif lang == "rust" and status.startswith("Code 2 (Rust) compiled"):
+        cmd2 = [os.path.join(workdir, "candidate_code2")]
+    else:
+        return f"{AUTO_CODE2_MARK} Could not run Code 2 on your test inputs: {status}"
+    path1 = os.path.join(workdir, "candidate_code.py")
+    with open(path1, "w") as f:
+        f.write(code1)
+
+    def _run(cmd, inp):
+        try:
+            p = subprocess.run(cmd, input=inp, capture_output=True, text=True,
+                               timeout=AUTO_CODE2_RUN_TIMEOUT, cwd=workdir)
+            return p.returncode, p.stdout
+        except subprocess.TimeoutExpired:
+            return "timeout", ""
+    lines = [f"{AUTO_CODE2_MARK} Ran Code 1 (Python) and Code 2 ({lang.capitalize()}) "
+             f"on the same {len(inputs)} input(s) your code used:"]
+    for i, inp in enumerate(inputs, 1):
+        rc1, o1 = _run([sys.executable, path1], inp)
+        rc2, o2 = _run(cmd2, inp)
+        ex1 = "" if rc1 == 0 else f" [exit {rc1}]"
+        ex2 = "" if rc2 == 0 else f" [exit {rc2}]"
+        if rc1 != 0 and rc2 != 0:
+            verdict = "BOTH FAILED (the input is probably not valid for these programs)"
+        elif rc1 != 0 or rc2 != 0:
+            # 2026-10-01: was "DIFFERENT (only one program failed)". On the rust hard
+            # pilot most such cases were INVALID model-made inputs (wrong format,
+            # overflow) on true clones, which the model then rejected. A one-sided
+            # crash is not evidence either way unless the input is known to be valid.
+            verdict = ("INCONCLUSIVE (only one program failed; the input may not be "
+                       "valid for these programs)")
+        else:
+            verdict = "SAME" if o1.split() == o2.split() else "DIFFERENT"
+        lines.append(f"Input {i}: {_short(inp, 80)} -> Code 1: {_short(o1)}{ex1} | "
+                     f"Code 2: {_short(o2)}{ex2} -> {verdict}")
+    return "\n".join(lines)
+
+
 class PythonInputs(BaseModel):
     query: str = Field(description="code snippet to run")
     

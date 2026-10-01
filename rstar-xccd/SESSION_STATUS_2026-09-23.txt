@@ -1,0 +1,208 @@
+================================================================================
+ Session status: MCTS exploration fix + codenet SFT models + eval jobs
+ Written 2026-09-23 (point-in-time snapshot -- check `squeue -u khajezad` /
+ `sacct -j <id>` for current truth; this file exists so a lost connection or
+ a new session can pick this thread back up without re-deriving context).
+================================================================================
+
+--------------------------------------------------------------------------------
+PASTE THIS INTO A NEW CLAUDE CODE SESSION TO GET AN UPDATE
+--------------------------------------------------------------------------------
+Read SESSION_STATUS_2026-09-23.txt in
+/lustre06/project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD/rstar-xccd
+and give me a status update: check squeue for all job IDs listed in section 3,
+pull F1 scores for anything that has completed (grep "F1 score" the relevant
+eval_data/*_result files), and flag anything that timed out or is close to its
+time budget.
+--------------------------------------------------------------------------------
+
+
+1. WHAT HAPPENED THIS SESSION
+--------------------------------------------------------------------------------
+a) Found and fixed a real MCTS search bug (user-reported: "when the number of
+   generated nodes per step goes above 2, inference loops / doesn't
+   diversify"). Root cause: rstar_deepthink/nodes/mcts_node.py puct() gave
+   an unvisited child's exploration term a hardcoded 0 instead of a real
+   bonus, and rstar_deepthink/agents/mcts.py select_child() broke ties by
+   list order, not randomly. Together this meant a node's FIRST-listed child
+   could permanently outrank all its still-unvisited siblings the moment it
+   got one positive reward -- confirmed by direct simulation (old code
+   picked child 0 for 8/8 rollouts; fixed code round-robins all children
+   first, matching the reported symptom exactly).
+   FIX (both applied, uncommitted, working tree only):
+     - mcts_node.py puct(): AlphaZero-style bonus
+       c_puct*sqrt(parent.visit_count())/(1+visit_count()), replacing the
+       old hardcoded-0-for-unvisited branch.
+     - mcts.py select_child(): restricts competition to a node's
+       not-yet-visited children whenever any exist (supplementary guard on
+       top of the puct() fix, requested explicitly).
+   Documented as a "Technical contribution" in
+   /lustre06/project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD/methodology.tex
+   (subsec:mcts_search), including the caveat that the supplementary guard
+   becomes the binding depth constraint when iterations < n_generate_sample.
+
+b) Curated last night's completed codenet mining runs (Qwen3-4B, jobs
+   3622157 java / 3622171 rust, COMPLETED 2026-09-22) into SFT data via
+   score_rl_rollouts.py:
+     java: 1720/2000 questions (86.0%) safe, 3328 safe leaves, 979 dangerous
+           excluded -> eval_data/sft_codenet_qwen3_4b_java.jsonl
+     rust: 1624/2000 questions (81.2%) safe, 3134 safe leaves, 1282
+           dangerous excluded -> eval_data/sft_codenet_qwen3_4b_rust.jsonl
+   (Did NOT touch the pre-existing eval_data/sft_codenet_{java,rust}_v1.jsonl
+   from 2026-09-14 -- those are Qwen2.5-7B's data, different model.)
+
+c) Fine-tuned two new checkpoints from this data (both COMPLETED, real
+   decreasing loss confirmed, checkpoints verified on disk, ~80G each
+   including Trainer optimizer-state subdir -- top-level HF save is the
+   ~17.6GB fp32 model actually used for inference):
+     sft_checkpoints/qwen3-4b-codenet-all-v1        <- 6462 ex (java+rust)
+     sft_checkpoints/qwen3-4b-codenet-rust-only-v1  <- 3134 ex (rust only)
+   Loss: all-v1 0.70->0.11 avg (first-10 vs last-10 steps), rust-only-v1
+   0.75->0.17. Launchers: Qwen3/run_sft_codenet_{all,rust_only}_v1_qwen3_4b_4gpu.sh
+   (+_fard.sh).
+
+   IMPORTANT (Track-B provenance): both were trained on
+   eval_data/codenet_train_python_{java,rust}.jsonl, the SAME CodeNet pool
+   used for the Qwen2.5-7B Track B run, which per SFT_DATA_PROCESS.txt
+   section 2 is DISJOINT from the CLCCD test files. Unlike the hard-v1/
+   hard-java-v1 pilots (rl_train-derived, must only eval on rl_heldout),
+   these two checkpoints are VALID to evaluate on the FULL CLCCD test files
+   directly against FINAL_FOR_CLCCD.md's published baseline (java F1
+   0.9454, rust F1 0.8739).
+
+d) Resubmitted 3 jobs that had TIMED OUT the previous night (heldout eval of
+   the OLDER qwen3-4b-hard-v1 / qwen3-4b-hard-java-v1 pilots, on
+   rl_heldout only) -- this time under the FIXED MCTS code from (a), with
+   larger time budgets. IMPORTANT CAVEAT: the already-completed BASELINE
+   heldout numbers (java F1 0.8607, rust F1 0.7097) were produced under the
+   OLD buggy code, so any comparison to these reruns conflates the
+   fine-tuning effect with the MCTS fix -- user explicitly chose this
+   tradeoff (asked to only rerun the incomplete jobs, not redo baseline).
+
+e) Submitted full-CLCCD-test-set eval jobs for the two NEW codenet
+   checkpoints (valid per (c)'s leakage note), plus one EXTRA eval of the
+   OLDER hard-v1 checkpoint on the full rust CLCCD set at the user's
+   explicit request DESPITE known leakage (12 of the 1200 rust questions
+   were in hard-v1's own SFT training data) -- that job is deliberately
+   named/branched with "TAINTED" so the result is never mistaken for a
+   clean generalization number.
+
+f) codenet-rust-only-v1's full-CLCCD-rust eval job was cancelled once
+   (job 3751119, pace ~140-175s/q, projected ~47-58h against a 30h budget)
+   and resubmitted with a 48h budget (job 3757227) per user request. It
+   is STILL showing the same slow, consistent ~120-170s/q pace (5-7x
+   slower than its sibling codenet-all-v1 rust job on the identical file --
+   looks like a structural property of this specific checkpoint, not noise)
+   and is projecting close to or over 48h again. User's explicit
+   instruction: DO NOT bump again preemptively -- if it times out, resubmit
+   WITHOUT --no-resume (main.py's --resume is default-on) so it picks up
+   from where it left off instead of restarting, since every run of this
+   job has used the same already-fixed MCTS code (no code-version-mixing
+   risk here, unlike the heldout reruns in (d)).
+
+
+2. RESULTS SO FAR
+--------------------------------------------------------------------------------
+qwen3-4b-hard-v1 (OLD pilot, 59 examples, java+rust combined), rl_heldout,
+FIXED MCTS code:
+  java (360 q): F1 0.9704  (P=1.0000, R=0.9425)   [job 3732062, COMPLETED]
+  rust (240 q): F1 0.9217                          [job 3732069, COMPLETED]
+  vs. baseline (OLD buggy code): java F1 0.8607, rust F1 0.7097
+  ** Gains are NOT purely a fine-tuning effect -- conflated with the MCTS
+     fix, since baseline used the old code. Do not cite as a clean ablation. **
+
+qwen3-4b-hard-java-v1 (OLD pilot, 40 java-only examples), rl_heldout java,
+FIXED MCTS code: job 3732071, still running as of this writing -- not yet
+scored.
+
+qwen3-4b-codenet-all-v1 / qwen3-4b-codenet-rust-only-v1: no eval results yet,
+jobs still running (see section 3).
+
+qwen3-4b-hard-v1 on FULL CLCCD rust (TAINTED, leakage-contaminated): job
+3754532, still running -- read its eventual F1 as an upper bound, NOT a
+valid generalization number (see section 1e).
+
+
+3. JOB TRACKER (check with squeue -u khajezad / sacct -j <id> --format=...)
+--------------------------------------------------------------------------------
+As of 2026-09-23, last checked (elapsed / pace / projected-total / budget):
+
+  3732071  q3-4b-eval-heldout-java-hard-java-v1-fard   def-fard_gpu
+           rl_heldout java (360q), hard-java-v1 checkpoint, FIXED MCTS code
+           200/360, 118s/q, ~6h48m elapsed, projected ~12-14h, budget 18h
+           Output: eval_data/rl_heldout_python_java_CLCCD_depth_16.jsonl.mcts.
+                   qwen3-4b-hard-java-v1.heldout-hard-java-v1.*.jsonl
+
+  3751115  q3-4b-eval-clccd-java-codenet-all-v1        def-khajezad_gpu
+           FULL CLCCD java (1800q), codenet-all-v1 checkpoint
+           568/1800, 23s/q, ~3h37m elapsed, projected ~11-13h, budget 48h
+           Output: eval_data/test_python_java_CLCCD_depth_16.jsonl.mcts.
+                   qwen3-4b-codenet-all-v1.assert-consistency-score.*.jsonl
+
+  3751117  q3-4b-eval-clccd-rust-codenet-all-v1        def-khajezad_gpu
+           FULL CLCCD rust (1200q), codenet-all-v1 checkpoint
+           606/1200 (past halfway), 17s/q, ~3h25m elapsed, projected ~6-7h,
+           budget 30h
+           Output: eval_data/test_python_rust_CLCCD_depth_16.jsonl.mcts.
+                   qwen3-4b-codenet-all-v1.assert-consistency-score.*.jsonl
+
+  3757227  q3-4b-eval-clccd-rust-codenet-rust-only-v1  def-khajezad_gpu
+           FULL CLCCD rust (1200q), codenet-rust-only-v1 checkpoint
+           RESUBMITTED once already (killed 3751119, see section 1f)
+           48/1200, 131s/q (persistently slow, structural to this
+           checkpoint), ~1h55m elapsed, projected ~44-56h, budget 48h --
+           WATCH THIS ONE. Do not bump per user instruction; resume with
+           --resume (drop --no-resume) if it times out.
+           Output: eval_data/test_python_rust_CLCCD_depth_16.jsonl.mcts.
+                   qwen3-4b-codenet-rust-only-v1.assert-consistency-score.*.jsonl
+
+  3754532  q3-4b-eval-clccd-rust-hard-v1-TAINTED-fard  def-fard_gpu
+           FULL CLCCD rust (1200q), hard-v1 checkpoint, LEAKAGE-TAINTED
+           (see section 1e -- do not report its F1 as a clean number)
+           164/1200, 160s/q, ~2h38m elapsed, projected ~30-40h, budget 30h
+           -- may need a --resume rerun if it times out; that's fine, no
+           special caveat about resuming this one (same code version
+           throughout).
+           Output: eval_data/test_python_rust_CLCCD_depth_16.jsonl.mcts.
+                   qwen3-4b-hard-v1.clccd-full-LEAKAGE-TAINTED.*.jsonl
+
+  ALREADY COMPLETED (this session):
+  3732062  rl_heldout java, hard-v1            -> F1 0.9704 (section 2)
+  3732069  rl_heldout rust, hard-v1            -> F1 0.9217 (section 2)
+  3745966/3745967  SFT codenet-all-v1          -> COMPLETED, checkpoint saved
+  3745968/3745969  SFT codenet-rust-only-v1    -> COMPLETED, checkpoint saved
+  3751119  FULL CLCCD rust, codenet-rust-only-v1 -> CANCELLED (see 1f),
+           superseded by 3757227
+
+
+4. HOW TO CHECK STATUS AFTER RECONNECTING
+--------------------------------------------------------------------------------
+  squeue -u khajezad -o "%.10i %.48j %.14a %.8T %.10M %.9l"
+  sacct -j <jobid> --format=JobID,JobName%40,State,ExitCode,Elapsed -X
+  # per-job live pace (grep the .log.err file, named %x_%j.log.err, in
+  # rstar-xccd/ directly -- NOT Qwen3/, these scripts cd there before
+  # running so slurm's %x_%j.log.{out,err} lands in the submit dir which
+  # for these jobs was rstar-xccd/ itself):
+  grep -oE "Main Processing: [0-9]+it \[[^]]*\]" <jobname>_<jobid>.log.err | tail -1
+  # F1 scores once a job finishes:
+  grep "F1 score" eval_data/*_result
+
+
+5. WHAT TO DO NEXT ONCE EVERYTHING FINISHES
+--------------------------------------------------------------------------------
+  a) Score qwen3-4b-hard-java-v1's rl_heldout java run (3732071) once done.
+  b) Score qwen3-4b-codenet-all-v1 on full CLCCD java + rust (3751115,
+     3751117) -- directly comparable to FINAL_FOR_CLCCD.md's Qwen3-4B
+     baseline (java F1 0.9454, rust F1 0.8739). This is the real
+     Track-B-scale result this whole thread has been building toward.
+  c) Score qwen3-4b-codenet-rust-only-v1 on full CLCCD rust (3757227) --
+     compare against (b)'s rust number to see whether mixing java into the
+     training data helped or hurt rust specifically.
+  d) Score qwen3-4b-hard-v1's TAINTED full-rust run (3754532) -- report only
+     with the leakage caveat prominently attached, never as a standalone
+     generalization claim.
+  e) Given (a): decide whether to also run a clean (non-TAINTED,
+     leakage-free) full-scale comparison for the hard-v1/hard-java-v1
+     pilots, e.g. the "rl_train minus the leaked questions" option that was
+     offered but not chosen this session.
+================================================================================

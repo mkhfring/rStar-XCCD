@@ -267,7 +267,261 @@ rl_heldout_* only, not the full CLCCD files); any run combining Track A +
 Track B; a decision on whether full SFT (current approach) or LoRA is
 preferred going forward -- this first run is full-parameter FSDP, matching
 the original rStar-Math recipe, not LoRA.
+
+
+8. HARD-SUBSET SFT DATA, QWEN3-4B / CODENET (added 2026-09-23)
+--------------------------------------------------------------------------------
+CONTEXT: by this point the model had moved to Qwen3-4B, and the full-scale
+Track B recipe (all 2000/2000 CodeNet questions per language, safe leaves
+only -- see sft_checkpoints/qwen3-4b-codenet-all-v1 and -rust-only-v1) had
+been evaluated against the published Qwen3-4B CLCCD baseline (java F1
+0.9454, rust F1 0.8739) and come out FLAT-TO-WORSE (codenet-all-v1: java
+0.9436, rust 0.8498). Hypothesis: training on all 2000 questions per
+language dilutes the signal with examples the base model already gets
+right; concentrating training on the subset the model actually gets WRONG
+might be higher-signal per example, at the cost of a much smaller dataset.
+This section documents how that "hard" subset was defined and built, mirror-
+ing the ORIGINAL Track-A hard-v1 pilot's method (RESUME_HERE.txt / the
+qwen3-4b-hard-v1 / -hard-java-v1 checkpoints) but applied to Track B
+(CodeNet) data instead of Track A (rl_train) data.
+
+a) DEFINING "HARD": reused build_failed_dataset.py UNCHANGED -- the same
+   script and the same predict_label()/clone-on-disagreement aggregation
+   (with the exec-signature override) used for every CLCCD F1 number in
+   this project, not a new ad hoc filter. A question counts as "hard" if
+   the model's AGGREGATE clone/non-clone verdict over its own tree of
+   sampled rollouts disagrees with ground truth (including trees that
+   never reached a parsable verdict at all -- "no_judgment" counts as
+   failed, same convention as the original hard-v1 pilot).
+     Source questions:  eval_data/codenet_train_python_{java,rust}.jsonl
+                         (the same 2000/2000-question Track B pool used for
+                         codenet-all-v1 / codenet-rust-only-v1)
+     Scored run:        eval_data/codenet_train_python_{java,rust}_depth_16.
+                         jsonl.mcts.Qwen3-4B.rl-mining-codenet-v1.
+                         def-fard_gpu.20260921203724.jsonl
+                         (jobs 3622157 java / 3622171 rust, the SAME mining
+                         trees codenet-all-v1's safe leaves were curated
+                         from -- no new eval run needed to find "hard")
+     Command (run per language):
+       python build_failed_dataset.py \
+         --source eval_data/codenet_train_python_{java,rust}.jsonl \
+         --run qwen3-4b=eval_data/codenet_train_python_{java,rust}_depth_16.jsonl.mcts.Qwen3-4B.rl-mining-codenet-v1.def-fard_gpu.20260921203724.jsonl \
+         --out eval_data/failed_codenet_python_{java,rust}.jsonl
+     Result:
+       java: 63/2000 failed (57 false_negative, 2 false_positive, 4 no_judgment)
+       rust: 93/2000 failed (17 false_negative, 3 false_positive, 73 no_judgment)
+     NOTE ON SCALE: 63+93=156 questions total -- much smaller than the
+     4000-question Track B pool, comparable to the original 59-example
+     rl_train-derived hard-v1 pilot. Any checkpoint trained on this is
+     pilot-scale, not a Track-B-scale replacement.
+     NOTE ON DEFINITION: this is NOT the same set as score_rl_rollouts.py's
+     "no safe leaf" questions (280 java / 376 rust from the codenet-all-v1
+     curation) -- that set also excludes correct-but-untrustworthy
+     (DANGEROUS, section 4) leaves, which is a per-leaf trustworthiness
+     filter, not a question-level correctness filter. "Hard" here is
+     strictly about the model's aggregate prediction being wrong.
+
+b) SANITY CHECK BEFORE RE-MINING: filtered the EXISTING codenet-mining-v1
+   rollout trees down to just these 63/93 hard indices and ran
+   score_rl_rollouts.py on that subset, to see whether the mining run the
+   model already did happens to contain a usable safe leaf for any of them
+   (which would mean no new GPU job is needed):
+     java: 2/63 (3.2%) already have >=1 safe leaf
+     rust: 1/93 (1.1%) already have >=1 safe leaf
+   Expected and confirms the definition is coherent: if the tree's
+   AGGREGATE verdict across all its sampled rollouts was wrong, nearly
+   every INDIVIDUAL rollout was also wrong, so there's essentially nothing
+   here to imitate as-is. Re-mining with a fresh is_sampling=True pass is
+   required to get any training signal out of this subset at all.
+
+c) RE-MINING JOBS (submitted 2026-09-23): same mining config as every other
+   Qwen3-4B CodeNet run (config/my_test_mcts_qwen3_4b_depth_16_1gpu_
+   sampling_rl_mining.yaml, is_sampling=True), a NEW branch name
+   (rl-mining-hard-codenet-v1) to keep this separate from the rl_train-
+   derived rl-mining-hard-v1 branch used by the original pilot.
+     Launchers: Qwen3/run_rstar_mcts_slurm_rl_mining_hard_codenet_{java,rust}_
+                qwen3_4b.sh (+ _fard.sh twin-guard variants)
+     QAF:       eval_data/failed_codenet_python_{java,rust}.jsonl
+     Jobs:      3870570/3870571 (java, khajezad/fard twins)
+                3870572/3870573 (rust, khajezad/fard twins)
+     Output (once complete): eval_data/failed_codenet_python_{java,rust}_
+                depth_16.jsonl.mcts.Qwen3-4B.rl-mining-hard-codenet-v1.*.jsonl
+
+d) RESULT (updated 2026-09-24): all four jobs from (c) COMPLETED. IMPORTANT
+   CAVEAT DISCOVERED: the twin-guard did NOT work this time -- both the
+   khajezad and fard copies actually ran a full independent mining pass for
+   each language (confirmed: fard logs show no "already running" early-exit
+   message, and both pairs of output files have near-identical but
+   non-identical content and near-identical elapsed time), instead of one
+   real run + one no-op as intended. Net effect: two independent
+   is_sampling=True passes per language instead of one. Not harmful (no
+   corruption, just extra sampled rollouts), and since both passes landed
+   the SAME per-question safe/unsafe outcome (see below), pooling them adds
+   leaf diversity per question for free rather than new question coverage.
+   Cause not investigated (plausibly a scheduling race where both jobs
+   started before either's squeue-based guard check could see the other).
+
+   Per-run yield (khajezad run == fard run exactly, per-question):
+     java: 23/63 (36.5%) now have >=1 safe leaf (up from 2/63 pre-re-mining
+           check in (b)) -- 29 safe leaves per run, 25 dangerous excluded
+     rust: 11/93 (11.8%) now have >=1 safe leaf (up from 1/93) -- 23 safe
+           leaves per run, 17 dangerous excluded
+   Java recovered far better than rust under re-mining, consistent with
+   rust being the harder language throughout this project. 82/93 rust hard
+   questions remain completely unrecoverable at this sampling budget.
+
+   SFT DATASETS BUILT (pooling both khajezad+fard runs per language, since
+   they cover identical questions but with different sampled leaf text --
+   free extra diversity from the twin-guard accident):
+     java-only:  eval_data/sft_hard_codenet_java_only.jsonl   (58 examples)
+     rust-only:  eval_data/sft_hard_codenet_rust_only.jsonl   (46 examples)
+     java+rust:  eval_data/sft_hard_codenet_java_rust.jsonl  (104 examples)
+   Commands: python score_rl_rollouts.py <khajezad_run> <fard_run> \
+               --emit_sft eval_data/sft_hard_codenet_{java,rust}_only.jsonl
+             python score_rl_rollouts.py <java_khajezad> <java_fard> \
+               <rust_khajezad> <rust_fard> --emit_sft
+               eval_data/sft_hard_codenet_java_rust.jsonl
+   Pilot-scale, as expected (comparable to the original 59-example hard-v1
+   set) -- NOT a Track-B-scale dataset.
+
+   NOT YET DONE: wrapping these three into training-ready full-prompt files
+   via train/build_full_prompts.py (same CFG for both languages, per
+   section c) and launching the three SFT runs -- exactly how
+   codenet-all-v1 / codenet-rust-only-v1 were trained, but no launcher
+   scripts or checkpoints exist yet for this hard-codenet subset.
+
+e) UPDATE 2026-09-24: (d)'s three SFT jobs were built and submitted (jobs
+   3880506 java-only, 3880507 rust-only, 3880508 java+rust; small-batch
+   recipe per_device=2 x 4 GPUs x grad_accum=1, matching the original
+   hard-v1/hard-java-v1 pilots, NOT the Track-B effective-batch-64 recipe
+   which was confirmed on datasets this size to collapse to ~2 real
+   optimizer steps). 3880506 (java-only) COMPLETED in 9 minutes.
+
+   INSPECTING THE RUST DATA MORE CLOSELY exposed how weak it actually is:
+   the 46 rust "examples" are only 11 UNIQUE questions (2-6 near-duplicate
+   leaves each: [6,6,6,6,4,4,4,4,2,2,2]), vs java's 58 examples / 23 unique
+   questions. And 82/93 (88%) of the rust hard questions still have ZERO
+   safe leaves even after the standard-budget re-mining in (c) -- looks
+   more like a genuine capability gap on hard rust clones than a curation
+   problem. Cancelled 3880507 and 3880508 (both still PENDING, no compute
+   spent) rather than train on data about to be superseded.
+
+   WIDE RE-MINING ATTEMPT for rust (jobs 3881191 khajezad / 3881193 fard):
+   before concluding the 82 unrecovered questions are out of reach, tried a
+   wider search budget on the SAME eval_data/failed_codenet_python_rust.jsonl
+   (93 questions). New config: config/my_test_mcts_qwen3_4b_depth_16_1gpu_
+   sampling_rl_mining_wide_rust.yaml, branch rl-mining-hard-codenet-wide-v1.
+   n_generate_sample/best_of 4->8, iterations 3->12 (NOT a single-parameter
+   change -- two things forced widening iterations and best_of together
+   with n_generate_sample):
+     1. vLLM constraint: llm_engine.py passes best_of=config.best_of,
+        n=config.n_generate_sample into SamplingParams, which requires
+        best_of >= n -- raising n_generate_sample alone would crash.
+     2. MCTS depth-guard interaction (methodology.tex Sec. mcts_search):
+        the recent select_child() fix requires >= n_generate_sample
+        rollouts to clear one tree level. The STANDARD config already had
+        iterations(3) < n_generate_sample(4) -- the guard was ALREADY the
+        binding constraint, so the rust re-mining in (c) likely never
+        explored past depth 1. Raising n_generate_sample without raising
+        iterations proportionally would have made this strictly worse.
+        iterations=12 clears one level at n_generate_sample=8 (8 rollouts)
+        with 4 rollouts left over for a second level.
+   NOT YET DONE: jobs 3881191/3881193 still running; rust-only and
+   java+rust SFT datasets/checkpoints will be rebuilt from whichever of the
+   standard-budget and wide-budget rust mining outputs (or both, pooled)
+   actually recovers more of the 93 questions, once this completes.
+
+f) WIDE RE-MINING RESULT + POOLED RETRAIN (updated 2026-09-24 afternoon):
+   3881191 (khajezad) COMPLETED (1h10m); its twin 3881193 (fard) was
+   CANCELLED with 0 elapsed -- the twin-guard worked correctly this time
+   (contrast with (c), where it didn't fire at all).
+     Wide run ALONE: 14/93 (15.1%) safe questions, 64 safe leaves.
+   Compared question-by-question against the standard run's 11/93: wide
+   recovered 6 questions standard never got (305, 709, 1280, 1369, 1383,
+   1416) but MISSED 3 standard did get (1466, 1538, 1965) -- expected
+   is_sampling=True/temp=0.9 variance, not a strict superset. POOLING all
+   three runs (std-khajezad + std-fard + wide) recovers the union:
+   17/93 (18.3%) unique questions, 110 safe leaves total. Spot-checked one
+   newly-recovered trace (question 709, a selection-sort clone) -- coherent,
+   on-topic analysis, not degenerate.
+   Rebuilt datasets (score_rl_rollouts.py on all 3 rust files [+ both java
+   files for the combined set], --emit_sft):
+     eval_data/sft_hard_codenet_rust_only.jsonl   110 examples (was 46)
+     eval_data/sft_hard_codenet_java_rust.jsonl   168 examples (was 104)
+   SFT jobs resubmitted on the refreshed data (launchers unchanged -- they
+   already pointed at these filenames; no -fard twins, same reasoning as
+   (e)):
+     3926242  q3-4b-sft-hard-codenet-rust-only-v1   COMPLETED 11m41s
+              -> sft_checkpoints/qwen3-4b-hard-codenet-rust-only-v1
+     3926245  q3-4b-sft-hard-codenet-java-rust-v1   COMPLETED 13m20s
+              -> sft_checkpoints/qwen3-4b-hard-codenet-java-rust-v1
+   NOT YET DONE: evaluate these two checkpoints on full CLCCD (rust / both
+   languages respectively), same pattern as the java-only eval already
+   running (jobs 3921168/3921171, see SESSION_STATUS_2026-09-24.txt).
+
+g) BINARY-BLOB DATA BUG FOUND AND FIXED (2026-09-24 afternoon): while
+   diagnosing WHY rust's hard-codenet recovery stayed so low even after (f)'s
+   wider budget, found that 73/93 hard rust questions never produced a
+   SINGLE MCTS tree node across all three mining passes combined -- not a
+   wrong answer, zero generated rollouts. Root cause: question text for
+   those 73 was 150k-392k characters (vs ~1.4k-9.7k for questions the search
+   actually processed) -- 72 of the 73 matched a `cargo-atcoder`/
+   `BIN: &'static str` signature, confirmed by direct inspection to be Rust
+   submissions that embed a base64-encoded PRECOMPILED BINARY as a string
+   constant (an AtCoder-judge trick, unrelated to this project) instead of
+   readable source. These blow past max_model_len (16384 tokens) before
+   generation can start -- unanswerable by construction, not "hard", and
+   were being counted as mining/training failures the whole time.
+   PREVALENCE CHECKED beyond the hard subset: full CodeNet pools have
+   83/2000 (4.2%) rust / 15/2000 (0.8%) java records matching this pattern.
+   The published CLCCD test files (test_python_{java,rust}_CLCCD.jsonl,
+   1800/1200 q) have ZERO matches -- every existing headline F1 number in
+   this project (FINAL_FOR_CLCCD.md, codenet-all-v1, etc.) is UNAFFECTED by
+   this bug; it only ever polluted the CodeNet TRAINING/mining side.
+   FIX: filter_codenet_binary_blobs.py (drop any record matching the
+   cargo-atcoder/BIN signature OR with question text > 20000 chars; both
+   thresholds checked well clear of any legitimate record's length). Applied
+   to both pools, ORIGINAL files left untouched:
+     eval_data/codenet_train_python_rust_clean.jsonl   1917/2000 kept (83 dropped)
+     eval_data/codenet_train_python_java_clean.jsonl   1985/2000 kept (15 dropped)
+   Companion eval_data/*_clean.jsonl_report per file lists exactly which
+   indices were dropped and why. `index` values are preserved unchanged from
+   the original pool, so these clean files still match up against the
+   EXISTING codenet-mining-v1 rollout trees (jobs 3622157/3622171) --
+   no new mining GPU job was needed to re-derive the hard sets below.
+   RE-DERIVED THE HARD SETS on the clean pools (same rollout trees as
+   section (a)'s original derivation, just a filtered --source):
+     python build_failed_dataset.py \
+       --source eval_data/codenet_train_python_{java,rust}_clean.jsonl \
+       --run qwen3-4b=eval_data/codenet_train_python_{java,rust}_depth_16.jsonl.mcts.Qwen3-4B.rl-mining-codenet-v1.def-fard_gpu.20260921203724.jsonl \
+       --out eval_data/failed_codenet_python_{java,rust}_clean.jsonl
+     java: 58 hard (was 63 -- 5 of the removed 15 were in the hard set)
+     rust: 20 hard (was 93 -- 73 of the removed 83 were in the hard set,
+       i.e. almost the ENTIRE apparent rust difficulty gap was blob garbage)
+   CROSS-CHECKED against the already-built (f) SFT data: all 17 uniquely-
+   recovered rust questions in the CURRENT sft_hard_codenet_rust_only.jsonl
+   are a subset of the clean 20 -- the mining/curation pipeline never
+   produced a spurious safe leaf from a blob question, so (f)'s dataset and
+   checkpoints are valid as-is, NOT invalidated by this bug, no retraining
+   needed on that account.
+   CORRECTED PICTURE: true rust hard-question recovery is 17/20 = 85% (NOT
+   the 18.3%/11.8% figures reported in (c)-(f), which used the wrong,
+   blob-inflated denominator of 93) -- only 3 genuinely unrecovered hard
+   rust questions remain: indices 1113, 1492, 1549. Qwen3-4B is NOT
+   meaningfully worse at reasoning over hard rust clones than hard java once
+   unanswerable inputs are excluded; the apparent capability gap was mostly
+   a CodeNet data-quality artifact specific to rust's submission pool.
+   NOT YET DONE: codenet-all-v1 and codenet-rust-only-v1 (section "CONTEXT"
+   above) were trained/evaluated on the UNFILTERED pool -- a clean re-run of
+   those Track-B-scale tracks (fresh mining + training on the *_clean.jsonl
+   pools) has not been attempted, and would be needed to know whether
+   removing this noise from the full-scale (not just hard-subset) training
+   data changes those checkpoints' flat-to-worse full-CLCCD numbers. Java's
+   15-question blob rate (0.8%) is small enough it probably isn't the
+   answer for java, but rust's 4.2% could plausibly matter at full-pool
+   scale too.
 ================================================================================
+
 
 9. PROCESS-LEVEL CURATION, TEACHER TRACES AND PREFERENCE DATA (added 2026-09-24,
    Claude Code session; no API calls -- all review/writing done in-session)

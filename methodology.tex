@@ -264,17 +264,71 @@ child to expand from is chosen by an upper-confidence selection rule:
     Q(s)
     +
     c_{\text{puct}}
-    \sqrt{
-        \frac{\ln N(\operatorname{parent}(s))}{N(s)}
-    },
+    \frac{\sqrt{N(\operatorname{parent}(s))}}{1 + N(s)},
 \]
 where $Q(s)$ is the running average value backed up to $s$, $N(s)$ is its
 visit count, and $c_{\text{puct}}$ controls the exploration-exploitation
-trade-off; both terms are treated as zero for an as-yet-unvisited node.
-Expansion itself proceeds by sampling several candidate continuations from
-the policy model at temperature $>0$ for the selected node, each of which
-becomes a new child; the number of continuations sampled per expansion is a
-configuration parameter of the search (Section~\ref{subsec:experimental_setting}).
+trade-off. $Q(s)$ is treated as zero for an as-yet-unvisited node, but the
+exploration term is not: it is well-defined and strictly positive whenever
+the parent itself has been visited, so an unvisited child is always credited
+for being unexplored rather than scored identically to a sibling that has
+already accumulated a poor outcome. Expansion itself proceeds by sampling
+several candidate continuations from the policy model at temperature $>0$
+for the selected node, each of which becomes a new child; the number of
+continuations sampled per expansion is a configuration parameter of the
+search (Section~\ref{subsec:experimental_setting}).
+
+\paragraph{Technical contribution: correcting a degenerate exploration term.}
+An earlier implementation of the selection rule above set the exploration
+term to zero not only for $Q(s)$ but for the entire $u$-term whenever
+$N(s)=0$, collapsing $\operatorname{UCT}(s)$ to exactly $0$ for every
+unvisited child regardless of $c_{\text{puct}}$ or how many times the parent
+had already been visited. Because every child of a freshly expanded node
+starts at $N(s)=0$, this made the first-listed child of an expansion -- an
+artifact of implementation order, not a property of the trajectory itself --
+strictly preferred over its siblings the moment it received any positive
+backed-up value: a positive $Q(s)$ then permanently outranked the
+$\operatorname{UCT}(s)=0$ score every unvisited sibling was stuck at, with no
+mechanism for the score to ever recover. In practice this let the search
+spend its entire remaining rollout budget at a node re-descending a single
+child's subtree, while the other $n_{\text{generate\_sample}}-1$ children
+produced at that expansion -- each already the product of a real
+policy-model sample and, whenever its step involved code, a real execution
+or compilation -- were never selected again. The failure is bounded at the
+default branching factor of two candidates per expansion
+(Section~\ref{subsec:experimental_setting}), where at most one sibling can be
+starved, but compounds with wider expansions: at
+$n_{\text{generate\_sample}}=4$, for instance, we observed the search
+degenerate into repeatedly extending one branch step after step until the
+maximum depth was reached, rather than exploring the alternative
+continuations it had already paid to generate -- behavior that is
+functionally indistinguishable from an infinite loop from the outside, since
+wall-clock cost scales with the width of every expansion while the effective
+search width collapses to one.
+
+We apply two corrections, verified in isolation to compose safely (an
+unvisited child is always selected ahead of a visited one, and the first full
+pass over a node's children proceeds in a fixed, non-repeating order). First,
+the $u$-term is rewritten as $c_{\text{puct}}\sqrt{N(\operatorname{parent}(s))}
+/ (1+N(s))$, the standard AlphaZero-style form: it requires no special case
+for $N(s)=0$, evaluates to a strictly positive bonus for an unvisited child
+as soon as its parent has been visited even once, and still decays as the
+child itself accumulates visits, so it does not prevent the search from
+eventually converging on exploiting a genuinely strong child. Second, as a
+supplementary, threshold-style guard layered on top of this corrected term,
+child selection at a node restricts competition to that node's not-yet-visited
+children whenever at least one exists, only falling back to comparing
+$\operatorname{UCT}(s)$ across all non-terminal children once every child has
+received at least one visit. This guarantees every candidate continuation
+produced at an expansion is actually explored once before any one of them is
+exploited a second time, independent of how the corrected exploration bonus
+happens to be tuned via $c_{\text{puct}}$. The guard is not free: clearing one
+level of the tree under it requires at least $n_{\text{generate\_sample}}$
+rollouts, so for configurations where the rollout budget is smaller than the
+branching factor, the guard itself becomes the binding constraint on how deep
+the search can reach -- we flag this interaction explicitly rather than
+treating the guard as strictly dominant over the corrected exploration term
+on its own.
 
 Backup along a trajectory is driven by execution outcomes rather than by a
 learned process-reward model in the setting evaluated in this work: when a

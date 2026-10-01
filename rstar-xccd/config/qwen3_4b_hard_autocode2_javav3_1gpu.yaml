@@ -1,0 +1,48 @@
+# HARD-NEGATIVE PILOT, AUTO-CODE2 + JAVA PROMPT v3 (2026-10-01): = qwen3_4b_hard_autocode2_java_1gpu.yaml with java v3 examples (run_both defined AND called in one code step, real outputs) and one added sentence in rule 12.
+# (python_tool.auto_compare_code2). Only difference from the dual-exec arm.
+# ABLATION arm B: DUAL EXECUTION, java (EXPERIMENT_PLAN E5). = qwen3_4b_frozen_e0_1gpu.yaml with the
+# language-specific prompt (the methodology.tex Fig. prompt) and few-shots whose
+# examples compile and run BOTH programs; all 2 examples used for every question.
+# execute_code2 True (default).
+
+
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_code2_exec_python_java_v3.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt_code2_exec_python_java_v3.json"
+
+swap_space: 8
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 2
+best_of: 2
+is_sampling: False
+iterations: 2
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 2
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 1
+
+rust_crate_check: "strict"
+
+execute_code2: True
+auto_code2: True   # harness runs Code 1 AND Code 2 on every input the step fed to Code 1

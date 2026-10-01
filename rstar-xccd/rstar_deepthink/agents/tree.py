@@ -12,7 +12,7 @@ from omegaconf import DictConfig, OmegaConf
 from timeout_decorator import timeout
 from rstar_deepthink.config import BaseConfig
 from rstar_deepthink.nodes.base_node import BaseNode
-from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, extract_code2_source, stage_code2, mentions_code2_execution, sanitize_input, is_python_code, snapshot_dir, cleanup_generated_code, execute_code2_enabled, CODE2_DISABLED_MESSAGE
+from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, extract_code2_source, stage_code2, mentions_code2_execution, sanitize_input, is_python_code, snapshot_dir, cleanup_generated_code, execute_code2_enabled, CODE2_DISABLED_MESSAGE, auto_code2_enabled, capture_python_inputs, auto_compare_code2
 from rstar_deepthink.constants import TIMEOUT_SECONDS, TIMEOUT_MESSAGE, CODE_END, OUTPUT_END, CODE, ANSWER
 
 
@@ -103,7 +103,14 @@ FENCE_LINE_RE = re.compile(r"^\s*`{3,}\s*\w*\s*$")
 # Non-greedy, DOTALL so a block can span multiple lines or share a line with
 # its own tags (e.g. "<code> print(x) <end_of_code>"). Falls back to the end
 # of the string if <end_of_code> is missing (e.g. truncated generation).
-CODE_BLOCK_RE = re.compile(r"<code>(.*?)(?:<end_of_code>|$)", re.DOTALL)
+# FIX 2026-09-30: a block also ends at the next <code>. When the model reopens
+# <code> in a continuation step ("<code> def run_both..." then "<code> out =
+# run_both(...) <end_of_code>"), the old pattern kept the literal second
+# "<code>" inside the program, which then failed to parse ("No valid Python code
+# found"): 29% of code steps in the E5 rust dual-exec run and 41% in the
+# hard-negative rust dual runs; 88-98% of those parse after the fix. Python-only
+# runs were barely affected (~1% of their rejections).
+CODE_BLOCK_RE = re.compile(r"<code>(.*?)(?=<code>|<end_of_code>|$)", re.DOTALL)
 
 
 def _clean_code_block(block: str) -> str:
@@ -185,7 +192,15 @@ def code_execution(
                                 else CODE2_DISABLED_MESSAGE)
 
         try:
-            observation = str(tool_func(action_input)).strip()
+            if action == "python_interpreter" and auto_code2_enabled() and execute_code2_enabled():
+                with capture_python_inputs() as cap:
+                    observation = str(tool_func(action_input)).strip()
+                # before the cleanup below: auto_compare_code2 stages its own files
+                auto = auto_compare_code2(question, cap.inputs)
+                if auto:
+                    observation = f"{observation}\n{auto}"
+            else:
+                observation = str(tool_func(action_input)).strip()
         finally:
             # in a finally so a timeout or a raising step still cleans up;
             # every step re-stages what it needs, so nothing downstream

@@ -15,7 +15,7 @@ from omegaconf import OmegaConf
 from rstar_deepthink.agents import BS, MCTS
 from rstar_deepthink.solver import Solver
 from rstar_deepthink.config import BaseConfig
-from rstar_deepthink.tools.python_tool import set_rust_crate_check, set_execute_code2
+from rstar_deepthink.tools.python_tool import set_rust_crate_check, set_execute_code2, set_auto_code2
 from evaluate_clone_results import evaluate as run_clone_evaluation, format_report as format_clone_eval_report
 
 torch.set_num_threads(12)
@@ -104,6 +104,7 @@ if __name__ == '__main__':
     # environment (see python_tool.set_rust_crate_check).
     set_rust_crate_check(config.rust_crate_check)
     set_execute_code2(config.execute_code2)
+    set_auto_code2(config.auto_code2)
 
     data = load_qaf(args.qaf)
     solver = Solver(config=config)

@@ -98,6 +98,11 @@ E3. COMPUTE-COST ACCOUNTING                        difficulty: LOW  impact: CRIT
   2 A100s. Pure-inference timings still to be extracted.
   Done when: cost columns filled in the main table + one F1-vs-cost figure.
 
+E4-REV (2026-09-28, user): headline baselines must use the LITERATURE's best
+  prompts (our prompt is part of the contribution; "our prompt, single pass"
+  becomes an ablation). Details and fixes: BASELINE_REVISION_PLAN_2026-09-28.txt.
+  Scheduled after the running E1/E16a work.
+
 E4. STRONGER BASELINES ON THE SAME PAIRS            difficulty: MED  impact: CRITICAL
   "Near SOTA" needs the strongest reasonable competitors on OUR exact pairs.
   a) Large open LLM, single pass: Qwen3-32B and/or Qwen2.5-Coder-32B with the
@@ -187,6 +192,83 @@ E12. FIRST PYTHON-RUST NUMBERS FOR THE CLCCD PAPER'S MODELS  difficulty: MED  im
   section 3). Running GPT-3.5 + LLaMA2-7B on our rust pairs gives a direct
   link to the published benchmark.
 
+
+E16 RE-SCOPED 2026-09-28 (user) after the E5 ablation: dual execution
+  LOST to python-only for base Qwen3-4B (java 0.969 -> 0.878, rust 0.917 ->
+  0.712, rl_train-picked rule). Paper main method = PYTHON-ONLY + tested rule.
+  E16a (ACTIVE): Claude-written traces for the PYTHON-ONLY method. Training
+       prompts = the python-only arm prompt (generic mcts_prompt.json +
+       few_shot_imprvoed.json, execute_code2 False, model told Code 2 cannot
+       run). Traces run ONLY Code 1, write strong discriminating tests, and
+       reason about Code 2 by reading it; every <output> is the real harness
+       observation. Mostly Claude-written, topped up with verified
+       self-generated python-only trajectories. Eval on full CLCCD test sets
+       vs the python-only base (0.969 java / 0.917 rust).
+       NON-CLONE TRACES (user, 2026-09-28): run a REAL discriminating test
+       (Code 1 output vs hand-traced Code 2 output differ -> non-clone).
+       Consequence: the tested rule would flip these into clone votes, so
+       the SFT model's aggregation rule is re-chosen on rl_train / the E1
+       dev set (likely current or majority), not inherited from base.
+  E16b (DEFERRED, revisit after E16a): the original dual-execution SFT
+       described below -- tests whether fine-tuning makes running both
+       programs pay off (would reframe the RQ4 negative result). Needs the
+       E8 "both outputs observed" detector first. Design kept unchanged below.
+
+E16. DUAL-EXECUTION SFT (decided 2026-09-26; START ONLY AFTER THE E5
+     ABLATION FINISHES)                         difficulty: MED-HIGH  impact: HIGH
+  Goal: a fine-tuned Qwen3-4B that actually runs the second program, calls
+  the comparison it sets up, and gets a higher F1 than base Qwen3-4B and
+  Qwen3-8B single pass on the FULL CLCCD test sets.
+  Lessons from Track A strict (4014873: learned to run Code 2 in 47% of
+  trees, but F1 0.912 vs base 0.920, errors flipped to false clones):
+    - build training prompts with the DUAL-EXECUTION prompt (Track A used
+      the generic one -> train/eval mismatch);
+    - balance: many non-clone traces where both outputs DIFFER;
+    - every kept trace must CALL the run-both helper, show both outputs, and
+      base the verdict on them (observed failure: helper defined, never
+      called, verdict non-clone);
+    - source pairs from the CodeNet pools (codenet_train_python_{java,rust}
+      _clean.jsonl, 1985 / 1917 pairs, half clones), leakage-checked against
+      the CLCCD test pairs (check_leakage.py) -> evaluate on full test sets.
+  FINAL DECISION 2026-09-26 (user, supersedes the design below): the user
+  states Claude may be used to generate training samples for this
+  research and has requested Anthropic's official written permission.
+    MAIN       = MOSTLY CLAUDE-WRITTEN TRACES (targeted failure modes,
+                 real harness outputs), topped up with verified
+                 self-generated trajectories where useful.
+    COMPARISON = MOSTLY SELF-GENERATED (same collection run; cheap).
+  Keep the written permission with the project records; disclose the
+  data source in the paper (Claude-written traces = distillation).
+  PREVIOUS design (kept for the record):
+  UPDATED 2026-09-26 after checking Anthropic's terms (Consumer Terms s.3,
+  Commercial Terms, help-center 'Can I use my Outputs to train an AI
+  model?' of 2026-03-16: 'without our written permission'; 'using Outputs
+  as training targets' listed as prohibited). FINAL ARM DESIGN:
+    MAIN  = self-generated only (Qwen3-4B's own verified trajectories;
+            no Claude-written text in the training data).
+    VARIANT = MAIN + a small set of Claude-written targeted traces;
+            train/evaluate ONLY if Anthropic grants written permission
+            (or UBC advises it is fine). Paper results must not depend
+            on it. Note: Track A SFT (4014872) already used 47 Claude
+            teacher traces -- treat it the same way.
+  Original arms as first discussed (superseded by the design above):
+    A. MOSTLY CLAUDE-WRITTEN TRACES (primary). Analyses/test inputs written
+       in-session; every <output> is the real harness observation
+       (build_teacher_traces.py, harness_exec.py). Target the failure modes:
+       stdin-reading Java clones, Rust with unavailable crates (honest
+       fallback), same-problem near-miss non-clones, non-clones whose
+       outputs differ. Disclose as distillation; user to check Anthropic's
+       usage terms.
+    B. MOSTLY SELF-GENERATED (comparison, run if cheap): Qwen3-4B mining with
+       the dual-exec prompt + sampling on the same CodeNet pools; keep only
+       correct trajectories where both outputs were observed.
+  Cost of adding arm B: the mining run is needed anyway (it also supplies
+  the non-Claude share of arm A), so B adds only one SFT (<1 h on 4 GPUs)
+  and one pair of full-test evals (~18 GPU-h). Mining itself: ~25-30 GPU-h
+  per language, splittable across jobs.
+  Prerequisite from E5/E8: a "both outputs observed" detector (the current
+  "Code 2 compiled" marker only means a step mentioned the program). The
+  same detector is the arm-B filter.
 
 --------------------------------------------------------------------------------
 P3 -- OPTIONAL

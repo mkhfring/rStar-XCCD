@@ -1,0 +1,25 @@
+# LOCKED SETS, score_hard_negatives.py --set hardeval, 2026-10-01 (rules fixed beforehand: extension=current, SCB=tested)
+== java: 375 pairs {'clone': 150, 'hn_output': 150, 'cross': 75} (multi-answer suspects excluded)
+ SCB run Qwen3-4B.hard-locked-ext.def-khajezad_gpu.20261001042431.jso (375 trees)
+  SCB old                                clone-recall 0.600 | FPR hard 0.320 cross 0.027 | F1 hard 0.6250 cross 0.7438 | resp 100.0%
+  SCB current                            clone-recall 0.567 | FPR hard 0.247 cross 0.000 | F1 hard 0.6250 cross 0.7234 | resp 100.0%
+  SCB tested                             clone-recall 1.000 | FPR hard 0.980 cross 0.547 | F1 hard 0.6711 cross 0.8798 | resp 100.0%
+  SCB majority                           clone-recall 0.427 | FPR hard 0.173 cross 0.000 | F1 hard 0.5333 cross 0.5981 | resp 100.0%
+  SCB triage only (any real test)        clone-recall 1.000 | FPR hard 0.980 cross 0.573 | F1 hard 0.6711 cross 0.8746 | resp 100.0%
+ SCB run Qwen3-4B.hard-locked-pyonly.def-khajezad_gpu.20261001042431. (375 trees)
+  SCB old                                clone-recall 0.840 | FPR hard 0.733 cross 0.000 | F1 hard 0.6528 cross 0.9130 | resp 100.0%
+  SCB current                            clone-recall 0.620 | FPR hard 0.493 cross 0.000 | F1 hard 0.5868 cross 0.7654 | resp 100.0%
+  SCB tested                             clone-recall 0.907 | FPR hard 0.827 cross 0.013 | F1 hard 0.6634 cross 0.9477 | resp 100.0%
+  SCB majority                           clone-recall 0.507 | FPR hard 0.373 cross 0.000 | F1 hard 0.5390 cross 0.6726 | resp 100.0%
+  SCB triage only (any real test)        clone-recall 0.907 | FPR hard 0.833 cross 0.013 | F1 hard 0.6618 cross 0.9477 | resp 100.0%
+  Qwen3-4B sp2 think                     clone-recall 0.847 | FPR hard 0.673 cross 0.000 | F1 hard 0.6720 cross 0.9170 | resp 100.0%
+  phi-4 sp2 nothink                      clone-recall 0.920 | FPR hard 0.760 cross 0.000 | F1 hard 0.6866 cross 0.9583 | resp 100.0%
+== rust: 90 pairs {'clone': 36, 'hn_output': 36, 'cross': 18} (multi-answer suspects excluded)
+ SCB run Qwen3-4B.hard-locked-pyonly.def-khajezad_gpu.20261001042431. (90 trees)
+  SCB old                                clone-recall 0.889 | FPR hard 0.778 cross 0.056 | F1 hard 0.6667 cross 0.9275 | resp 100.0%
+  SCB current                            clone-recall 0.583 | FPR hard 0.361 cross 0.000 | F1 hard 0.6000 cross 0.7368 | resp 100.0%
+  SCB tested                             clone-recall 0.917 | FPR hard 0.806 cross 0.056 | F1 hard 0.6735 cross 0.9429 | resp 100.0%
+  SCB majority                           clone-recall 0.444 | FPR hard 0.278 cross 0.000 | F1 hard 0.5161 cross 0.6154 | resp 100.0%
+  SCB triage only (any real test)        clone-recall 0.917 | FPR hard 0.806 cross 0.056 | F1 hard 0.6735 cross 0.9429 | resp 100.0%
+  Qwen3-4B sp2 think                     clone-recall 0.833 | FPR hard 0.694 cross 0.000 | F1 hard 0.6593 cross 0.9091 | resp 100.0%
+  phi-4 sp2 nothink                      clone-recall 0.861 | FPR hard 0.778 cross 0.111 | F1 hard 0.6526 cross 0.8986 | resp 100.0%

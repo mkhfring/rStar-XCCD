@@ -1,21 +1,981 @@
 ================================================================================
- Session status: SFT pipeline bugs found + fixed; first valid SFT retrains queued
- Written 2026-09-26 00:45 EDT (point-in-time snapshot -- check
- `squeue -u khajezad` / `sacct -j <id>` for current truth). Follows on from
- SESSION_STATUS_2026-09-24.txt and SFT_DATA_PROCESS.txt section 9.
+ Session status: HARD-NEGATIVE PILOT GPU RUNS IN FLIGHT (8 twin-guard jobs).
+ Last updated 2026-09-30 (point-in-time snapshot -- check `squeue -u khajezad`
+ / `sacct -j <id>` for current truth).
+ Paper plan (CURRENT): ../../rStar-XCCD-Paper/PAPER_COMPLETION_PLAN_2026-09-30.md
+   -- section 0 = MINIMUM PLAN (6 items) agreed with the user.
+ Older plans: EXPERIMENT_PLAN_2026-09-26.txt, BASELINE_REVISION_PLAN_2026-09-28.txt.
 ================================================================================
 
 --------------------------------------------------------------------------------
-PASTE THIS INTO A NEW CLAUDE CODE SESSION TO GET AN UPDATE
+PASTE THIS INTO A NEW CLAUDE CODE SESSION TO RESUME
 --------------------------------------------------------------------------------
 Read SESSION_STATUS_2026-09-26.txt in
 /lustre06/project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD/rstar-xccd
-and give me a status update: check sacct/squeue for every job ID in PART A,
-run the checks in PART B for each job that has finished, and compare the
-finished evals against the baselines in PART C under all three aggregation
-rules (rescore_runs.py --calibrate).
+starting at "(NOW)", then section 0 of
+../../rStar-XCCD-Paper/PAPER_COMPLETION_PLAN_2026-09-30.md.
+Then: check the 8 jobs listed in (NOW) with sacct, score finished runs with the
+command in (NOW), report the results, and continue with (NOW) NEXT STEPS.
 --------------------------------------------------------------------------------
 
+
+================================================================================
+RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
+             are older history kept for detail)
+================================================================================
+
+(NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-01 11:50: CONFIRMATION RESULTS (locked sets; rules fixed beforehand).
+      RUST PROMPT: v4 chosen on the pilot (233 common pairs, current rule: F1 .784 vs .726 v3,
+        recall .750 vs .663, FPR-hard .161 both, harness 88% vs 75%). 4361611 TIMEOUT at 247/250
+        (not resubmitted; decision made on common pairs).
+      RUST EXTENSION on the locked set SUBMITTED: 4392875 / 4392876 (Qwen3/run_eval_hardeval_ext_rust_
+        qwen3_4b_1gpu.sh, rust v4, branch hard-locked-ext).
+      JAVA LOCKED (150 clone / 150 same-task bug / 75 cross; eval_data/e16a/hardeval_scores_2026-10-01.txt):
+                               clone-rec  bug->clone  F1     BalAcc  MCC
+        Extension (verdict)      .567       .247      .625   .660   .326
+        SCB (tested)             .907       .827      .663   .540   .118
+        Qwen3-4B think sp2       .847       .673      .672   .587   .203
+        phi-4 sp2                .920       .760      .687   .580   .218
+        Ext - phi-4 (paired bootstrap by problem, 5000): F1 -.062 [-.129,+.002]; BalAcc +.080
+        [+.023,+.137]; MCC +.108 [-.019,+.237]. Ext - Qwen-think: BalAcc +.073 [+.017,+.130],
+        MCC +.123 [+.002,+.244]. Ext - SCB: BalAcc +.120, MCC +.208 (both CIs > 0).
+        -> Bug-catching claim HOLDS (bug->clone .25 vs .67-.83); F1 claim does NOT (clone recall
+           fell from .66 on the pilot to .57). F1 favours the clone class; BalAcc/MCC favour the
+           extension. Report all three; do not cherry-pick.
+      RUST LOCKED (36/36/18): SCB tested F1 .674 (bug->clone .806); Qwen-think .659 (.694);
+        phi-4 .653 (.778). Extension pending.
+      E5 RUST DUAL-EXEC RERUN (fixed harness, CLCCD rust test, old dual config, no auto_code2):
+        rejected steps 0.6% (was 28.9%) but F1 COLLAPSED: current .416 (P .988 R .263), tested .456,
+        rl_train-calibrated 'tested'. Before the fix: current .712. -> with Code 2 really running,
+        the plain dual-exec arm rejects most true clones on CLCCD. RQ4 answer: dual execution
+        hurts on the standard benchmark (python-only SCB .917).
+  *** 2026-10-01 04:30 PLAN (user): EXTENSION, NO TRAINING IN THIS PAPER (see
+      PAPER_COMPLETION_PLAN_2026-09-30.md section 00; TRAINING_PLAN header = follow-up paper).
+      Extension rule = current (verdict), chosen on the 250-pair pilot (= its dev set).
+      LOCKED-SET CONFIRMATION RUNS SUBMITTED (twin guard; launchers Qwen3/run_eval_hardeval_*):
+        extension java      4365178 / 4365179   branch hard-locked-ext   (java prompt v3 + auto_code2)
+        SCB pyonly java     4365180 / 4365181   branch hard-locked-pyonly
+        SCB pyonly rust     4365182 / 4365183   branch hard-locked-pyonly
+        Qwen3-4B think sp2  4365184 / 4365185   (--split hardeval, both languages)
+        phi-4 sp2 (2 GPU)   4365186 / 4365187   (--split hardeval, both languages)
+      Extension RUST on the locked set: submit after the rust v4-vs-v3 decision (4361611; it is
+      slow, 86/250 at 80 min -> will hit its 3:30 limit ~06:29; RESUBMIT the same launcher,
+      resume finishes it).
+      SCORE: python eval_data/e16a/score_hard_negatives.py --lang L --set hardeval
+             python eval_data/e16a/diagnose_hard_negatives.py --lang L --set hardeval --arm locked-ext
+      REPORT the current rule for the extension (chosen on the pilot), the tested rule for SCB
+      pyonly (its CLCCD rule), baselines as they are. Do NOT change anything after seeing these.
+  *** 2026-10-01 04:10: JAVA PROMPT v3 DONE (4358974). Java pilot, current rule:
+        clone recall .660 | buggy called clone .155 | cross .000 | F1 hard .727
+        (python-only .567/.464/.558; auto-code2 v2 .433/.237/.519; Qwen3-4B-think .856/.649/.683;
+         phi-4 .928/.711/.703) -> BEST F1 on java pilot, fewest missed bugs of any non-majority arm.
+      Rust v4 (4361611) and E5 rust dual-fix (4344209) still running.
+  *** 2026-10-01 03:45 USER DECISIONS:
+      (1) The new method (harness-side dual execution: auto_code2 + INCONCLUSIVE label +
+          java prompt v3 [+ rust v3 or v4]) is an EXTENSION, not the main method. SCB
+          (python-only + tested rule) stays the main CLCCD result. Paper story: SCB competitive
+          on CLCCD -> CLCCD-style negatives are all cross-problem -> on same-task bugs SCB and
+          all baselines call most buggy programs clones -> harness-side dual execution catches
+          most of them. Needed: dev runs (rule choice), locked hard sets (java done; rust below),
+          baselines on the locked sets; CLCCD run of the new arm optional (shows trade-off).
+      (2) Locked RUST set: relax the length limit to 6000 chars (more problems; some programs
+          longer than anything in CLCCD -- record in the manifest). CPU job 4363455
+          (Qwen3/run_build_pool_rust_len6000_cpu.sh) -> eval_data/e16a/pool_rust_len6000.jsonl.
+          build_hard_negatives.fetch / build_training_pool now take max_len (default 3000).
+          TODO: split_training_pool.py needs a --pool option to read pool_rust_len6000.jsonl.
+          Fallback if too few bugs: per-problem input generators.
+          DONE 03:55: pool_rust_len6000: 167 problems, only 36 with a verified bug (46 pairs);
+          30/36 involve programs > 3000 chars. LOCKED RUST SET: hardeval_python_rust_codenet.jsonl
+          (+_meta, MANIFEST, read-only): 90 pairs = 36 clone / 36 hn_output / 18 cross. Small ->
+          wide CIs. 8 problems shared with the java locked set (noted in both manifests); the 22
+          problems shared with pool_java_train.jsonl were REMOVED from it (now 427 problems).
+          split_training_pool.py has --pool and --note.
+  *** 2026-10-01 02:10: AUTO-CODE2 v2 DONE (4351391 java / 4351393 rust). E5 rust dual-fix
+      4344209 STILL RUNNING (~04:50). Scores file rewritten.
+      verdict rule (current): clone recall / buggy called clone (FPR hard) / F1 hard
+        RUST  python-only .766/.511/.673   auto-code2 v2 .670/.160/.733  <- best F1 of all
+              arms AND baselines (Qwen3-4B-think .714, phi-4 .694), with the lowest FPR on
+              buggy programs except the dual-fix arms. Cross FPR 0.
+        JAVA  python-only .567/.464/.558   auto-code2 v2 .433/.237/.519  (harness fired in
+              only ~13% of trees: Java model defines run_both and never runs an input)
+              baselines: Qwen3-4B-think .683, phi-4 .703 -> Java not solved.
+      NEXT: Java "never runs an input" problem (prompt/examples, or harness-side default input);
+      02:40 (user OK) JAVA FIX: root cause = MCTS shows an <output> after EVERY code step (since
+        2026-09-11), but the java v2 examples put `def run_both` alone in a step -> model defines
+        it, sees output ("Code 2 compiled ..."), answers (380/471 def-steps were followed directly
+        by <answer>). New few_shot_code2_exec_python_java_v3.json (run_both defined AND called on
+        2 inputs in ONE step; outputs are REAL harness observations) + mcts_prompt_..._java_v3.json
+        (one sentence added to rule 12). Config config/qwen3_4b_hard_autocode2_javav3_1gpu.yaml,
+        launcher Qwen3/run_eval_hard_autocode2javav3_java_qwen3_4b_1gpu.sh, branch
+        hard-autocode2-javav3: jobs 4358974 / 4358975.
+      02:30 USER DECISION: no SCB rerun on the full rust set (E5 pyonly rust .917 stays valid;
+        regex bug touched ~0.2% of its code steps). Full-set runs of the NEW arm wait for the
+        03:05 (user): ALSO TEST RUST PROMPT v4 on the pilot (same change as java v3: run_both
+        defined + called in one step, real outputs incl. the 2-round example, rule-12 sentence):
+        few_shot_code2_exec_python_rust_v4.json, mcts_prompt_code2_exec_python_rust_v4.json,
+        config/qwen3_4b_hard_autocode2_rustv4_1gpu.yaml, branch hard-autocode2-rustv4,
+        jobs 4361611 / 4361612. Compare with rust autocode2-v2 (F1 hard .733, harness 75%).
+        If v4 >= v3 -> use v4 for rust in the dev/test runs; else keep v3.
+        Java v3 result. PLAN (revised 02:55 with user): RUST PROMPT STAYS v3 (not needed: in the
+        rust v2 run the harness compared in 75% of trees and after a define-only step the model
+        called run_both 89% of the time; java v2: 16% / 3%). If java v3 holds -> submit together,
+        java prompt v3 + rust prompt v3, auto_code2 v2 harness, twin guard, NEW branch names: dev (E1 dev sets, 300 pairs/lang) AND
+        full CLCCD test (java 1800, rust 1200) for both languages; do NOT read test numbers until
+        the aggregation rule is chosen on the dev runs.
+        decide role of the new arm (main method vs extension); Rust locked set (relax length);
+        score E5 rust dual-fix when done.
+  *** 2026-10-01 00:10: RUST -fix PILOT RERUNS DONE (4344031 / 4344034). E5 rust dual-fix
+      4344209 STILL RUNNING (~05:00). Scores file rewritten (hard_negatives_scores_2026-09-30.txt).
+      rust, verdict rule (current), clone recall / FPR hard / F1 hard (94 clone, 94 hard):
+        python-only            .766 / .511 / .673
+        dual-exec (buggy)      .809 / .521 / .694      dual-exec FIXED   .372 / .149 / .490
+        auto-code2 (buggy)     .851 / .500 / .724      auto-code2 FIXED  .585 / .191 / .659
+        Qwen3-4B think .851/.532/.714   phi-4 .915/.723/.694
+      -> the fix makes Code 2 actually run: FPR on buggy programs drops from ~.5 to .15-.19
+         (best of ANY system), but clone recall collapses (.37/.59) -> F1 not better.
+      CAUSE (interim check on 60 clone trees, auto-code2-fix): the model's own inputs are
+         often INVALID (wrong format, overflow) -> one program crashes -> harness says
+         "DIFFERENT (only one program failed)" -> model rejects a true clone (14/60 trees);
+         10/60 both failed; only 7/60 had a clean output difference.
+      NEXT (proposal, needs user OK): (a) harness label "INCONCLUSIVE: one program failed,
+         input may be invalid" instead of DIFFERENT for one-sided crashes, re-test rust+java
+         (~4 GPU-h, new branch names!); (b) training reward for VALID + discriminating inputs.
+         Java auto-code2 harness fired in only 13% of trees: model mostly defines run_both
+         and never runs an input (363 such trajectories) -- separate issue.
+      00:20 (user OK): (a) DONE -- python_tool.auto_compare_code2 now labels a one-sided crash
+         "INCONCLUSIVE (only one program failed; the input may not be valid ...)". Re-test,
+         twin guard, branch hard-autocode2-v2 (launchers Qwen3/run_eval_hard_autocode2v2_*):
+           java 4351391 / 4351392    rust 4351393 / 4351394
+         score: score_hard_negatives.py --lang L ; diagnose --arm autocode2-v2
+      00:30 (user OK): LOCKED JAVA HARD EVAL SET built (CPU) by eval_data/e16a/split_training_pool.py:
+         hardeval_python_java_codenet.jsonl (+_meta), 375 pairs = 150 clone / 150 hn_output /
+         75 cross from 150 pool problems; 0 overlap with test/dev/pilot and with the train pool.
+         Manifest with sha256: eval_data/e16a/hardeval_java_MANIFEST.txt; files chmod a-w.
+         Training pool = pool_java_train.jsonl (449 problems, 480 hard pairs).
+         The 250-pair pilot sets (hard_python_*) are now DEV (used to design the harness).
+         TODO before running on it: score/diagnose scripts read only hard_python_* -> add a
+         --set {hard,hardeval} option. Rust: no locked set yet (pool has 13 rust bugs); options
+         (a) relax the 3000-char limit (+~66 problems), (b) input generators, (c) disclose pilot.
+         Scale of reruns if the new arm is promoted: see chat 2026-10-01 00:25 (dev rule choice
+         ~4 GPU-h, CLCCD test ~15-20 GPU-h per seed, 3 seeds; or ~25 GPU-h as an extension).
+  *** 22:20 UPDATE: HARNESS CHANGE + HARNESS BUG FIX; RUST RERUNS QUEUED.
+      (1) auto_code2 (user go-ahead): new config flag; python_tool.capture_python_inputs +
+          auto_compare_code2; tree.code_execution runs Code 1 AND Code 2 on every input a
+          step fed to a Python program and appends "[Harness] ... -> SAME/DIFFERENT/BOTH
+          FAILED". Configs config/qwen3_4b_hard_autocode2_{L}_1gpu.yaml (= dual-exec cfg +
+          auto_code2), launchers Qwen3/run_eval_hard_autocode2_{L}_qwen3_4b_1gpu.sh.
+          Runs 4332304 (java) / 4332307 (rust) DONE: F1 hard (current rule) java .513
+          (dual .472), rust .724 (dual .694). Harness compared in only 13% / 9% of hard
+          trees, BUT every leaf that saw a harness DIFFERENT answered non-clone.
+      (2) HARNESS BUG FOUND + FIXED (rstar_deepthink/agents/tree.py CODE_BLOCK_RE): when
+          the model reopens <code> in a continuation step, the second "<code>" tag stayed
+          inside the program -> "No valid Python code found" -> the step never ran.
+          Rejected code steps: E5 RUST DUAL (CLCCD test) 28.9% (514/1200 trees); hard rust
+          dual/auto 41%; 88-98% of those parse after the fix. Java dual 2-3%; python-only
+          7-17% rejected but only ~1% due to this bug -> MAIN SCB NUMBERS UNAFFECTED;
+          THE RQ4 RUST DUAL-EXEC RESULT IS INVALID (rerun on CLCCD test needed; ask user).
+      (3) RERUNS with the fix. First attempt 4340186-89 did NOTHING: resume found the old
+          output of the same branch (0 questions processed) -> NEW BRANCH NAMES:
+            rust autocode2-fix 4344031 / 4344033   (Qwen3/run_eval_hard_autocode2fix_rust_qwen3_4b_1gpu.sh)
+            rust dualexec-fix  4344034 / 4344035   (Qwen3/run_eval_hard_dualexecfix_rust_qwen3_4b_1gpu.sh)
+          LESSON: any rerun after a code change needs a NEW BRANCH name (resume is on).
+          Score: score_hard_negatives.py --lang rust (lists every run; *-fix = valid ones);
+          diagnose_hard_negatives.py --lang rust --arm autocode2-fix / dualexec-fix.
+          Java not rerun (bug ~2% there).
+      (5) E5 RUST DUAL-EXEC RERUN on the full CLCCD rust test set (RQ4), user go-ahead 22:30:
+            4344209 / 4344210 (Qwen3/run_eval_ablation_dualexecfix_rust_qwen3_4b_1gpu.sh,
+            branch ablation-dualexec-fix, config unchanged, 10 h limit; original took 5.9 h)
+          output eval_data/test_python_rust_CLCCD_depth_16.jsonl.mcts.Qwen3-4B.ablation-dualexec-fix.*.jsonl
+          log ends with rescore_runs --calibrate; compare with the E5 pyonly rust run (B1).
+      (4) 20:30-22:10 the cluster filesystem dropped (ESHUTDOWN); this block was rewritten
+          afterwards. All harness changes on disk only (branch claude-session-2026-09-24).
+  *** 17:40 UPDATE: QUEUE EMPTY. STEP 1 (dual-exec pilot, jobs 4324939/41) DONE and
+      STEP 2 pool (CPU job 4329331) DONE. Container restarted at ~17:30 (watchers lost;
+      jobs unaffected).
+      DUAL-EXEC on the hard set (scores file updated; diagnosis appended):
+                               clone-rec  FPR hard  FPR cross  F1 hard
+        java dual current        .392      .268      .000      .472   (py-only .558)
+             dual majority       .289      .186      .000      .392
+             dual tested         .990      .959      .420      .671
+        rust dual current        .809      .521      .000      .694   (py-only .673)
+             dual tested         .989      .915      .604      .681
+        -> dual execution does NOT beat python-only on clone+hard (java worse, rust ~same).
+      WHY (diagnose --arm dualexec, tree level, hard negatives java / rust):
+        Code 2 actually CALLED on an input   10% / 26%   (clones 12% / 35%)
+        a Code-2 call showed a MISMATCH       0% /  0%
+        official sample input used            1% /  6%
+        -> the model mostly defines run_both() and never calls it; when it does call it,
+           its self-made inputs never hit the bug. = TRAINING PLAN OUTCOME C (harness/prompt
+           first), with an input-choice problem on top.
+      STEP 2 POOL (eval_data/e16a/pool_{java,rust}.jsonl, one record per problem):
+        java 599 problems (590 non-suspect), 341 with >=1 verified WA, 838 hard pairs,
+             4,702 clone combinations
+        rust 111 problems (108 non-suspect), ONLY 8 with a verified WA (13 hard pairs)
+             -> the pilot already took nearly all usable Rust problems; Rust training data
+                is effectively nil -> train on Java only, Rust = transfer eval (needs user OK).
+      NEXT (proposed, needs user decision): harness change so that whenever the model runs
+        Code 1 on an input, the harness also runs Code 2 on the SAME input and shows both
+        outputs (removes "define but never call"); then re-run the hard pilot. Training only
+        after that, and rewards must target input choice (distinguishing inputs).
+  (below: earlier state, kept for reference)
+  *** 06:30 UPDATE: ALL 4 HARD-NEGATIVE RUNS DONE (khajezad copies COMPLETED, fard
+      twins CANCELLED by the guard -> guard worked). QUEUE EMPTY. SCORED:
+      eval_data/e16a/hard_negatives_scores_2026-09-30.txt  (multi-answer suspects excl.;
+      java 97 clone/97 hard/50 cross, rust 94/94/48)
+                               clone-rec  FPR hard  FPR cross  F1 hard  F1 cross
+      java SCB tested           .938      .732      .040      .703     .958
+           SCB triage-only      .948      .722      .040      .710     .963
+           SCB current (verdict).567      .464      .000      .558     .724
+           SCB majority         .443      .309      .000      .506     .614
+           Qwen3-4B think sp2   .856      .649      .000      .683     .922
+           phi-4 sp2            .928      .711      .000      .703     .963
+      rust SCB tested           .957      .830      .042      .687     .968
+           SCB triage-only      .957      .830      .042      .687     .968   (identical)
+           SCB current          .766      .511      .000      .673     .868
+           SCB majority         .649      .415      .000      .629     .787
+           Qwen3-4B think sp2   .851      .532      .000      .714     .920
+           phi-4 sp2            .915      .723      .000      .694     .956
+      READING: (1) tested rule == "model ran a test" (rust identical, java within 1
+      pair) -> it detects SAME TASK, not equivalence: 73%/83% of same-problem buggy
+      programs are called clones. (2) EVERY system collapses on hard negatives
+      (FPR .53-.83, F1 hard .68-.71 for all); SCB-tested ~ phi-4 ~ Qwen3-4B-think
+      (n~97 per class -> differences of a few points are noise). (3) the model's own
+      post-test verdict (current rule) does catch about half the bugs (FPR .46/.51)
+      but also rejects many true clones (recall .57/.77). Outcome = decision-gate
+      branch 3: benchmark limitation becomes a central finding; the "execution
+      detects behavioural differences" claim is NOT supported for Qwen3-4B.
+      Robust to keeping the suspects (--keep_suspect block in the same file).
+      USER CHOSE OPTION 2 (diagnose first). DIAGNOSIS DONE (CPU):
+        eval_data/e16a/diagnose_hard_negatives.py -> hard_negatives_diagnosis_2026-09-30.txt
+        Tree-level, hard negatives java / rust (clones in brackets):
+          a run showed a mismatch          1% / 2%    (bug almost NEVER exposed)
+          official sample input used       1% / 3%
+          Code 1 actually ran w/ output   37% / 37%  [36% / 41%]
+          "hollow" test (e.g. only `import subprocess`, empty output)  28% / 24%
+          a test crashed                  28% / 40%
+          print-only shortcut (reject by reading) 38% / 34%  [16% / 19%]
+        -> NOT "exposed and ignored": tests never reach the bug. In python-only mode
+           Code 2 is never run and the model does not predict its output; tests run
+           Code 1 on self-made inputs and print. The only discrimination comes from
+           READING (print-only rejections are ~2x more frequent on hard negatives than
+           on clones). Hollow/crashed "tests" still count as tested -> clone vote.
+           Example p02970: analysis writes Code 2 divides by (2*d - 1) vs (2*D + 1),
+           then says "core functionality is identical"; test = `import subprocess`.
+        >>> SUBMITTED 2026-09-30 (user go-ahead), twin-guard pairs khajezad / fard:
+              FIRST TRY 4315434-37: GUARD RACE -- all 4 started 15:47:23, each saw its
+              twin RUNNING and exited after 4 s (no work). twin_guard.inc FIXED: when
+              both run, the LOWER job id proceeds. RESUBMITTED 15:50 (3:30 limit):
+              dual java 4324939 / 4324940    dual rust 4324941 / 4324942
+            launchers Qwen3/run_eval_hard_dualexec_{java,rust}_qwen3_4b_1gpu.sh (6 h limit in file;
+            lowered to 3:30 on the pending jobs via scontrol, user OK 2026-09-30 14:05)
+            output eval_data/e16a/hard_python_{L}_codenet_depth_16.jsonl.mcts.Qwen3-4B.hard-dualexec.*.jsonl
+            SCORE: score_hard_negatives.py --lang L (picks up every SCB run, both arms);
+            DIAGNOSE: diagnose_hard_negatives.py --lang L --arm dualexec (DONE: --arm added;
+            flags code2_called / code2_mismatch / code2_agree(=Code 2 ran w/o error, NOT
+            "outputs equal") / crate_blocked; validated on the E5 dual CLCCD run: Code 2
+            actually CALLED in only ~15% java / ~35% rust trees, rust crate-blocked ~1/3).
+            Code extraction fixed (code spans several steps); pyonly numbers re-run and saved,
+            conclusions unchanged (mismatch 1-2%, sample 1-4%; hollow now 38%/29%).
+        STEP 2 STARTED IN PARALLEL (user, 2026-09-30 ~17:20; CPU only, useful under any
+            step-1 outcome): eval_data/e16a/build_training_pool.py -> pool_{java,rust}.jsonl
+            (one record per problem: up to 4 Accepted Pythons, 3 Accepted targets, 8 verified
+            Wrong Answer programs; excludes test/dev/traces AND the 250-pair hard pilot sets,
+            which become dev). CPU job 4329331 (Qwen3/run_build_training_pool_cpu.sh).
+            Remaining eligible problems (<=3000 chars): java 708, rust ONLY 133 (~60 usable)
+            -> rust is the bottleneck; split into locked eval / train is still to decide
+            (split_training_pool.py to write). Test-input generators: scope not decided.
+        TRAINING PLAN (user request 2026-09-30): TRAINING_PLAN_2026-09-30.txt -- step 1 =
+            this dual-exec pilot (decision gate A-D in the plan), then pool+generators,
+            rejection-sampling FT, GRPO only if needed.
+        (original proposal:) run the EXISTING
+          dual-execution arm (config/qwen3_4b_ablation_dualexec_{java,rust}_1gpu.yaml,
+          launchers Qwen3/run_eval_ablation_dualexec_*_qwen3_4b_1gpu.sh -> copy with
+          QAF=eval_data/e16a/hard_python_{L}_codenet.jsonl, twin guard) on the hard set;
+          score all rules. Running both programs on the same input is what can expose
+          these bugs; dual-exec lost on CLCCD only under the tested rule.
+  (below: pre-06:30 state, kept for reference)
+  WHAT WAS RUNNING: hard-negative pilot, 4 runs x 2 accounts (twin guard: the first
+    copy to start cancels its PENDING twin; a copy whose twin RUNS exits at once).
+      run                            def-khajezad_gpu   def-fard_gpu (name + -fard)
+      SCB java (frozen py-only cfg)  4288825            4288826
+      SCB rust                       4288827            4288828
+      Qwen3-4B think, sp2            4288829            4288830
+      phi-4 nothink, sp2, 2 GPU      4288831            4288832
+    Check:  sacct -X -j 4288825,4288826,4288827,4288828,4288829,4288830,4288831,4288832 \
+              -o JobID,JobName%30,Account%18,State,Elapsed
+    Expect one COMPLETED + one CANCELLED per run. If BOTH copies of a run
+    COMPLETED (guard race, happened once on 09-24), use the newest output file;
+    results are equivalent. If a run FAILED/TIMEOUT: read Qwen3/<job-name>_<id>.log.err
+    (SCB logs are in Qwen3/, submitted from Qwen3/; litprompt logs Qwen3/ too) and
+    resubmit BOTH copies with the commands in (00) "HOW SUBMITTED".
+    Logs end with WALLCLOCK_SECONDS; SCB logs also print rescore_runs output (the
+    'full' column is the only meaningful one on these files).
+  HOW TO SCORE (CPU, repo root rStar-XCCD/rstar-xccd):
+      source ../venv-qwen3/bin/activate
+      python eval_data/e16a/score_hard_negatives.py --lang java   # then --lang rust
+    It finds every SCB tree file and every literature-prompt file for the hard set,
+    excludes multi_answer_suspect rows by default (--keep_suspect keeps them), and
+    prints per system: clone recall, FPR on hard (same-problem WA) vs cross
+    (different-problem) non-clones, F1 hard, F1 cross, response rate. SCB is shown
+    under every rule (old/current/tested/majority) plus "triage only (any real test)".
+  WHAT THE RESULT DECIDES (the paper's framing, decision D1):
+    * tested rule keeps a low FPR on hard negatives -> method claim stands.
+    * tested FPR high but a verdict rule (current/majority) holds -> report both;
+      the rule depends on the negative type; recommend the verdict rule for near-misses.
+    * everything (incl. phi-4 / Qwen3-4B-think) collapses -> benchmark limitation
+      becomes a central finding; narrow the claim to task-level X-CCD.
+    Key comparison: SCB-tested FPR hard vs SCB "triage only" (if equal, the rule is
+    pure same-task detection) and vs phi-4 / Qwen3-4B-think.
+  NEXT STEPS (minimum plan, PAPER_COMPLETION_PLAN_2026-09-30.md section 0):
+    1. Score the hard-negative runs (above); write results into (00) and the paper
+       (new Results subsection + Limitations paragraph at main.tex \MK line ~896).
+    2. WP0: commit main.tex (paper repo, UNCOMMITTED since 2026-09-30) and version the
+       gitignored scripts/launchers listed under "FILES" below. Ask the user before
+       committing/pushing.
+    3. Minimal cost numbers (tokens, GPU-s, peak memory per pair; 100 pairs; SCB,
+       phi-4, Qwen3-4B think, Qwen3-8B think) -- needs user go-ahead for GPU.
+    4. Two more SCB seeds on the full CLCCD test sets (~70 GPU-h) -- needs go-ahead;
+       submit early (queue). Then bootstrap by problem.
+    5. Writing (abstract, Discussion, Threats, Conclusion, rule history, rename
+       MCTS claim, drop KD keyword), then final check.
+  USER DECISIONS SO FAR (2026-09-30):
+    * Keep phi-4 and Mistral-7B in the results (do NOT remove them). Claim: SCB (4B)
+      is comparable / statistically indistinguishable from phi-4 14B (both langs)
+      and Mistral-7B (java); SCB beats Mistral on rust (+0.174). Say "comparable",
+      not "same" (CIs crossing 0 are not equivalence).
+    * No re-run of baselines on the old CodeNet-extracted appendix set (stale;
+      drop or relabel that appendix table).
+    * GPU jobs: submit as twin-guard pairs on both accounts (def-khajezad_gpu +
+      def-fard_gpu) -- use Qwen3/twin_guard.inc.
+    OPEN: D1 framing (after hard negatives), D2 SFT in appendix or not, D3 blocked
+      baselines (Llama/gemma licences, GPT-3.5 key), D4 venue/deadline (TOSEM template).
+  FILES CREATED 2026-09-30 (all under rstar-xccd/, gitignored unless noted -> ON DISK ONLY):
+    eval_data/e16a/build_hard_negatives.py, audit_hard_negatives.py,
+      score_hard_negatives.py, baselines_summary_2026-09-30.txt,
+      hard_python_{java,rust}_codenet.jsonl (+ _meta.jsonl, audit fields inside)
+    Qwen3/twin_guard.inc, Qwen3/run_build_hard_negatives_cpu.sh,
+      Qwen3/run_eval_hard_pyonly_{java,rust}_qwen3_4b_1gpu.sh,
+      Qwen3/run_litprompts_1gpu_twin.sh
+    pure_inference/run_clccd_paper_prompts.py: new --split hard (tracked file, uncommitted)
+    ../../rStar-XCCD-Paper/main.tex (RQ1/RQ2 tables+text, setting, limitations) and
+      PAPER_COMPLETION_PLAN_2026-09-30.md -- paper repo, UNCOMMITTED.
+    Paper build check: copy to a scratch dir, sed compat=1.18 -> newest, pdflatex x3
+      + bibtex; compiled clean on 2026-09-30.
+
+(00) 2026-09-30 -- ALL CLCCD BASELINE JOBS FINISHED, SCORED. (Hard-negative jobs
+     submitted later the same day are in flight -- see (NOW).)
+  Full table: eval_data/e16a/baselines_summary_2026-09-30.txt
+    (= summarize_baselines.py, prompt chosen on dev by F1 over all pairs, 10k paired
+     bootstrap SCB - baseline, F1 over all pairs; + score_self_consistency.py output).
+  Test F1 (all pairs), dev-chosen prompt, SCB java .9691 / rust .9165:
+    model / variant            java  prompt  SCB-base [CI]          rust  prompt  SCB-base [CI]
+    phi-4 (14B) nothink       .9679  sp2   +.001 [-.008,+.011]    .9345  sp2   -.018 [-.046,+.010]
+    Mistral-7B-v0.3 nothink   .9756  sp1   -.006 [-.016,+.003]    .7429  sp1   +.174 [+.134,+.216]
+    Qwen3-32B think           .9535  sp2   +.016 [+.004,+.028]    .9074  sp2   +.009 [-.023,+.042]
+    Qwen3-32B nothink         .9393  sim   +.030 [+.020,+.040]    .6985  sp2   +.218
+    Qwen3-14B think           .9336  sp2   +.036 [+.024,+.048]    .8462  sp2   +.070 [+.033,+.109]
+    Qwen3-14B nothink         .9084  sp2   +.061                  .6900  sp2   +.227
+    Qwen3-8B think            .9355  sp2   +.034 [+.021,+.046]    .8401  sp2   +.076 [+.039,+.116]
+    Qwen3-8B nothink          .9071  sp2   +.062                  .6985  sp2   +.218
+    Qwen3-4B think            .9498  sp2   +.019 [+.009,+.030]    .8773  sp2   +.039 [+.007,+.072]
+    Qwen3-4B nothink (paper)  .8535  sp2   +.116                  .6813  sp2   +.235
+    DeepSeek-Coder-7B-v1.5    .9247  sp2   +.044 [+.032,+.057]    .7284  sp2   +.188
+    DeepSeek-Coder-V2-Lite    .9419  sp2   +.027 [+.015,+.040]    .7008  sp1   +.216
+    Qwen2.5-Coder-7B          .8903  sp2   +.079                  .5948  sp2   +.322
+    StarCoder2-15B (own run)  .6553  sp2   +.314                  -- no rust test run --
+    StarChat-beta (own run)   .6667  sim   +.302                  -- no rust test run --
+    Falcon-7B (ctx 2048)      .4397  sim   +.529                  .3014  sim   +.615
+  Self-consistency, sp2 nothink, n=16, rule chosen on dev (any-clone for k>=3):
+    Qwen3-4B SC@7 java .8615 / rust .7173;  Qwen3-8B SC@7 java .9196 / rust .7689
+    (SC@15: 4B .8615/.7254, 8B .9228/.7739) -> SCB +.05..+.20, all CIs > 0.
+  READING:
+    * SCB is NO LONGER best on java: phi-4 and Mistral-7B tie it (CIs cross 0).
+      On rust phi-4 is nominally ahead (.9345, n.s.) and Qwen3-32B-think ties.
+      SCB still significantly beats every Qwen3 up to 14B (think on or off),
+      same-budget self-consistency, and all 7B code models on rust.
+    * Qwen3-4B with THINKING ON is the strongest same-model baseline (.9498/.8773);
+      SCB gain over it is small but significant (+.019 / +.039).
+    * Outputs of Mistral and phi-4 were inspected: clean "Yes/No" answers, parser OK.
+  CAVEATS:
+    * Qwen3-4B nothink java: re-parsing the dev runs with the current parser picks
+      `reas` (dev .725; its test run is the 768-token 09-12 run, test .7752). The paper
+      keeps sp2 (.8535), which favours the baseline -- note it or rerun reas at 4096.
+    * Qwen3-32B nothink java: dev picks `sim` (.9393 test).
+    * Qwen2.5-Coder-3B has no dev run (TEST-CHOSEN).
+    * Llama-2-7b / Llama-3.1 / gemma-2 still blocked (licenses); GPT-3.5 needs a key.
+  PAPER: main.tex updated 2026-09-30 (uncommitted): RQ2 tables + text now include
+    thinking-on Qwen3, the added open models and self-consistency; claims narrowed
+    (see \MK notes). The RQ2 story needs a user decision: SCB ties phi-4/Mistral-7B.
+  PLAN: ../../rStar-XCCD-Paper/PAPER_COMPLETION_PLAN_2026-09-30.md (WP0-WP7,
+    decisions D1-D4). Critical path = WP1 hard negatives -> D1 framing -> text.
+    User (2026-09-30): keep phi-4/Mistral in the results; claim "comparable to 7B/14B".
+  HARD-NEGATIVE PILOT (minimum plan item 2), user go-ahead 2026-09-30:
+    builder eval_data/e16a/build_hard_negatives.py (docstring = design);
+    CPU job 4288390 (Qwen3/run_build_hard_negatives_cpu.sh, def-khajezad_cpu).
+    Output: eval_data/e16a/hard_python_{java,rust}_codenet{,_meta}.jsonl
+    (100 same-problem Accepted-Python vs Wrong-Answer non-clones + 100 clones +
+    50 cross-problem non-clones per language; distinguishing input in _meta).
+    Sample inputs ONLY: mutated inputs broke problem constraints in the smoke test.
+    DONE (job 4288390 COMPLETED): java 250 pairs, rust 250 pairs, each = 100 clone /
+      100 hn_output (0 crash-only) / 50 cross; 100 distinct problems per language.
+      Yield: java 134 hn of 205 problems tried, rust 116 of 254.
+      Audit (eval_data/e16a/audit_hard_negatives.py, fields added to _meta):
+        diff_type java: wrong_values 58, other 22, missing 15, extra 3, case_only 2
+                  rust: wrong_values 64, other 24, missing 4, case_only 8
+        multi_answer_suspect (8 accepted Pythons disagree): java 3, rust 6 problems
+        -> report main numbers excluding multi_answer_suspect (and case_only as a check).
+      Manual read of 6 random hn pairs: all genuine near-miss bugs (off-by-one
+        divisor p02970, primes only up to sqrt p00009, magic-square start p00078, ...).
+    GPU RUNS SUBMITTED 2026-09-30 as TWIN-GUARD pairs (user; khajezad / fard account,
+      guard logic Qwen3/twin_guard.inc, sourced by the launchers below; the loser
+      is cancelled while pending -- check both IDs, a race can run both):
+        SCB java 4288825 / 4288826     SCB rust 4288827 / 4288828
+        Qwen3-4B think sp2 4288829 / 4288830 (Qwen3/run_litprompts_1gpu_twin.sh)
+        phi-4 sp2 (2 GPU) 4288831 / 4288832
+      Outputs: eval_data/e16a/hard_python_{L}_codenet_depth_16.jsonl.mcts.Qwen3-4B.hard-pyonly.*.jsonl
+               eval_data/paper_prompt_replication/hard_python_{L}_codenet.jsonl.{Qwen3-4B,phi-4}.sp2.*.jsonl
+    HOW SUBMITTED (exact; reuse to resubmit a failed run -- always BOTH copies):
+      R=/lustre06/project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD/rstar-xccd
+      SCB (frozen python-only config, 1 GPU, ~1.5 h each), from $R/Qwen3:
+        for L in java rust; do N=q3-4b-hard-pyonly-$L
+          sbatch --account=def-khajezad_gpu --job-name=$N      run_eval_hard_pyonly_${L}_qwen3_4b_1gpu.sh
+          sbatch --account=def-fard_gpu     --job-name=$N-fard run_eval_hard_pyonly_${L}_qwen3_4b_1gpu.sh
+        done
+      Baselines, from $R:
+        T="--model_dir Qwen3-4B --split hard --prompts sp2 --enable_thinking --max_tokens 8192 \
+           --max_model_len 32768 --temperature 0.6 --top_p 0.95 --top_k 20 --seed 1"
+        sbatch --account=def-khajezad_gpu --job-name=lit-q3-4b-think-hard      Qwen3/run_litprompts_1gpu_twin.sh $T
+        sbatch --account=def-fard_gpu     --job-name=lit-q3-4b-think-hard-fard Qwen3/run_litprompts_1gpu_twin.sh $T
+        P="--model_dir phi-4 --tp 2 --split hard --prompts sp2 --seed 1"
+        sbatch --account=def-khajezad_gpu --gres=gpu:a100:2 --job-name=lit-phi4-hard      Qwen3/run_litprompts_1gpu_twin.sh $P
+        sbatch --account=def-fard_gpu     --gres=gpu:a100:2 --job-name=lit-phi4-hard-fard Qwen3/run_litprompts_1gpu_twin.sh $P
+      Score: eval_data/e16a/score_hard_negatives.py (written, dry-run OK) -- see (NOW).
+
+(0) 2026-09-29 03:00 UPDATE -- A1 DONE, A2 SFT + dev evals DONE, test evals CANCELLED
+  E1 base dev ('full' col):   current  tested  old
+      java                     0.776   0.966  0.936   -> freeze TESTED (P 1.00 R .93)
+      rust                     0.787   0.920  0.904   -> freeze TESTED (P .92 R .92)
+  E16a SFT sanity: OK (297/297 kept, no zero-loss steps, train_loss 0.334, vocab 151936).
+  E16a SFT dev ('full'):      current  tested  old
+      java                     0.643   0.667  0.641   (tested = predicts all clone, P .50)
+      rust                     0.715   0.400  0.703
+  -> SFT is FAR BELOW base (java .64 vs .97, rust .72 vs .92). Dev-chosen SFT rule
+     = current (rust) / ~tie (java); either way a clear loss.
+  Diagnosis: on true clones, 145/150 java and 74/75 rust SFT trees contain a
+     failing comparison (False) -> the model writes "Code 2 expected output
+     (traced by hand)" values it cannot compute; the traces taught it to assert
+     Code 2 outputs confidently (Claude supplied the real ones). Also the
+     `None  # Code 2 cannot process this input` case appears in ~80% of
+     non-clone code steps (47/149 java, 52/148 rust training traces have it).
+  NOTE: the "tried to run Code 2 300/300" line in SFT logs is a COUNTER FALSE
+     POSITIVE -- the trace template's comment "Code 2 cannot be executed in this
+     setting" matches the blocked-string check. Nothing ran Code 2.
+  VALIDITY AUDIT OF THE 'tested' RULE (2026-09-29, eval_data/e16a/audit_tested_rule.py):
+     'tested' == "clone iff the model ran ANY real test in any leaf" -- 100%
+     agreement on E5 pyonly test (java/rust) and E1 dev (java/rust). The test
+     OUTCOME and the model's post-test verdict are ignored; flipped leaves are
+     mostly crashed/unparsable code ("No valid Python code found") or the
+     model concluding non-clone after its test. Flips supply 134/900 java and
+     111/300 rust true positives. It works only because EVERY non-clone pair
+     is cross-problem (dev 0/375 same-problem) so the model shortcuts with
+     print("not code clones"); it is a triage/same-task signal, not execution
+     evidence. SFT model tests everything -> 'tested' predicts all-clone.
+     No gold-label leakage, but NOT valid as evidence for the execution method.
+     Decisive check = same-problem hard negatives (E9, Wrong Answer subs).
+  PAPER (2026-09-29, UNCOMMITTED in ../../rStar-XCCD-Paper/main.tex): main SCB =
+     python-only + tested rule chosen on E1 dev; RQ1-RQ4 tables filled from E5
+     pyonly/dual runs; new tables tab:aggregation-effect (dev+test, 4 rules) and
+     tab:tested-mechanism; limitation paragraph on cross-problem negatives.
+     Paired bootstrap (eval_data/e16a/bootstrap_vs_baselines.py, by index):
+       java SCB .9691 vs Qwen3-8B .9559  +.013 CI[+.004,+.022]  (significant)
+       rust SCB .9165 vs Qwen3-8B .9088  +.008 CI[-.021,+.038]  (parity only)
+     Build note: cluster pgfplots rejects compat=1.18 (compiled with compat=newest
+     in a /tmp copy; repo file unchanged).
+  PAPER BASELINES SWITCHED (2026-09-29, uncommitted): headline comparisons now vs
+     LITERATURE prompts (CLCCD six single-call prompts, runs of 2026-09-12 in
+     eval_data/paper_prompt_replication/), per BASELINE_REVISION_PLAN step 4.
+     Our-prompt single pass (Vanilla) is only an ablation step (new
+     tab:ablation-ladder). Bootstrap (eval_data/e16a/bootstrap_vs_literature_prompts.py):
+       java SCB .9691 vs Qwen3-8B sp2 .9071 +.062 CI[+.049,+.075]; vs 4B sp2 +.116
+       rust SCB .9165 vs Qwen3-8B sp2 .6985 +.218 CI[+.170,+.268]; vs 4B sp2 +.235
+     Still to run (plan steps 1-3): dev-set prompt choice, thinking-on arm,
+     se/sct + 2511.01176 prompts, 3 seeds; DeepSeek-7B dropped (no lit-prompt run).
+  BASELINE REVISION RUNS SUBMITTED 2026-09-29 ~04:10 (Qwen3/run_litprompts_1gpu.sh,
+     runner pure_inference/run_clccd_paper_prompts.py now has --split dev,
+     --enable_thinking, --temperature/--top_p/--top_k, --seed; outputs in
+     eval_data/paper_prompt_replication/*.{think|nothink}.s1.*.jsonl):
+       thinking ON (8192 new tok, T .6/p .95/k 20, seed 1), all 6 prompts:
+         4221318 8B test java | 4221319 8B test rust | 4221320 8B dev
+         4221323 4B test java | 4221324 4B test rust | 4221326 4B dev
+       thinking OFF dev runs (choose best prompt on dev): 4221328 8B,
+         4221329 4B, 4221330 Coder-7B
+       DeepSeek-7B 4221331/32 CANCELLED: models/deepseek-coder-7b-instruct-v1.5
+         is empty (weights elsewhere) -> fix path, resubmit.
+     Paper commit ba07931 (local, NOT pushed).
+  BASELINES, ROUND 2 (2026-09-29 ~04:40; user: add literature models, then other
+     sizes/families; build a same-compute baseline):
+     * Dev prompt choice DONE (4221328-30): sp2 wins for 4B/8B/Coder-7B, java+rust;
+       paper commit 7285c81 (Coder-7B rust row sl->sp2 0.5948). NOT pushed.
+     * Same-compute (self-consistency) jobs, sp2, n=16, T .7/p .8/k 20:
+         4222877 4B dev | 4222878 4B test | 4222879 8B dev | 4222880 8B test
+       score: python eval_data/e16a/score_self_consistency.py --lang L --dev <dev n16> --test <test n16>
+       SCB budget: ~1,100 generated tok/pair (4B) vs ~190 per sp2 answer -> k~7 matched.
+     * Literature models (CLCCD per-model formats, --prompt_format):
+         falcon-7b 4222940 dev | 4222941 test (ctx 2048: long pairs unanswered)
+         starcoder2-15b + starchat-beta: auto-submitted by /tmp/submit_when_ready.sh
+           (2 GPU) when downloads finish (/tmp/dl_lit_models.log)
+         Llama-2-7b-chat: BLOCKED, HF account mkhfring has not accepted Meta license.
+         GPT-3.5: needs OpenAI key (not asked yet).
+     * Tier-2 downloads queued (/tmp/dl_tier2_models.log): deepseek-coder-7b-v1.5
+       (-> models/deepseek-coder-7b-instruct-v1.5-hf), Mistral-7B-v0.3, Qwen3-14B,
+       phi-4, DeepSeek-Coder-V2-Lite, Qwen3-32B. Gated (need license): Llama-3.1-8B, gemma-2-9b.
+  Test evals 4185935/36 CANCELLED by user decision 2026-09-29 ~03:05 (after
+     ~3.4 h; dev already shows E16a loses). Partial outputs stay on disk; do
+     NOT resubmit this checkpoint -- fix the traces first (E16a v2).
+
+(A) JOBS IN FLIGHT -- NONE as of 2026-09-30 (A1/A2 below are finished; kept
+    for their paths). (logs: Qwen3/<job-name>_<jobid>.log.{out,err}; each eval
+    log ends with WALLCLOCK_SECONDS, a "... trees | tried to run Code 2 ..."
+    line and rescore_runs.py output for the three rules)
+
+  A1. E1 -- choose the aggregation rule on a problem-DISJOINT CodeNet dev set
+      (base Qwen3-4B, frozen python-only config, 1 GPU). DONE 2026-09-28 18:27 (see (0)).
+        4180592  q3-4b-e1-dev-pyonly-java  Qwen3/run_eval_e1_dev_pyonly_java_qwen3_4b_1gpu.sh
+        4180593  q3-4b-e1-dev-pyonly-rust  Qwen3/run_eval_e1_dev_pyonly_rust_qwen3_4b_1gpu.sh
+      data:   eval_data/e16a/dev_python_{java,rust}_codenet.jsonl
+              (java 150 clone/150 non; rust 75/225 = test ratio; 300 each)
+      output: eval_data/e16a/dev_python_{L}_codenet_depth_16.jsonl.mcts.Qwen3-4B.e1-dev-pyonly.*.jsonl
+      READ ONLY the 'full' column of rescore_runs (its rl_train/rl_heldout
+      columns use CLCCD indices -> meaningless on the dev files).
+      Expected ~1.5-2 h each.
+
+  A2. E16a SFT -- Qwen3-4B fine-tuned on the 297 Claude-written python-only
+      traces (user decision 2026-09-28: train now, self-generated top-up later).
+        4185932  q3-4b-sft-e16a-claude-pyonly   Qwen3/run_sft_e16a_claude_pyonly_qwen3_4b_4gpu.sh
+                 4 GPU, 2 h limit, recipe = Track A strict (eff. batch 8, 4 epochs,
+                 lr 7e-6, max len 8192, save final weights only)
+                 data:   eval_data/e16a/sft_e16a_claude_pyonly_full_prompt.jsonl
+                         (rebuilt at job start from traces_all_{java,rust}.jsonl
+                          with --cfg config/qwen3_4b_ablation_pyonly_1gpu.yaml)
+                 output: sft_checkpoints/qwen3-4b-e16a-claude-pyonly
+      afterok:4185932 (python-only config, 1 GPU):
+        4185933  q3-4b-e16a-sft-dev-java    Qwen3/run_eval_e16a_sft_dev_java_qwen3_4b_1gpu.sh   (6 h)
+        4185934  q3-4b-e16a-sft-dev-rust    Qwen3/run_eval_e16a_sft_dev_rust_qwen3_4b_1gpu.sh   (6 h)
+        4185935  q3-4b-e16a-sft-test-java   Qwen3/run_eval_e16a_sft_test_java_qwen3_4b_1gpu.sh  (24 h, full 1800)
+        4185936  q3-4b-e16a-sft-test-rust   Qwen3/run_eval_e16a_sft_test_rust_qwen3_4b_1gpu.sh  (24 h, full 1200)
+      outputs: eval_data/e16a/dev_python_{L}_codenet_depth_16.jsonl.mcts.qwen3-4b-e16a-claude-pyonly.e16a-sft-pyonly.*.jsonl
+               eval_data/test_python_{L}_CLCCD_depth_16.jsonl.mcts.qwen3-4b-e16a-claude-pyonly.e16a-sft-pyonly.*.jsonl
+      If a 24 h test eval times out: resubmit the same launcher (resume is on).
+      Fair-share is low on both def-fard_gpu and def-khajezad_gpu (~0.15);
+      queue waits of several hours are normal.
+
+(B) WHAT WE KNOW (all numbers F1, precision/recall in brackets)
+
+  B1. E5 ablation, base Qwen3-4B, full CLCCD test sets (4018934/35/37, 4020309):
+        arm/lang     current  tested            old    majority  rl_train pick  Code2 tried/compiled
+        pyonly java  0.884    0.969 (.999/.94)  0.956  0.829     tested         22/0
+        dual   java  0.768    0.878 (.79/.99)   0.762  0.723     tested         1165/1057
+        pyonly rust  0.689    0.917 (.94/.90)   0.902  0.584     tested         3/0
+        dual   rust  0.712    0.492 (.33/.99)   0.684  0.687     current        937/622
+      -> dual execution LOST for base 4B. DECISION (user, 2026-09-28): paper
+         main method = PYTHON-ONLY + tested rule (option 1); dual-exec is the
+         RQ4 negative result. Base python-only = the bar for everything below.
+  B2. Baselines to beat (same pairs): Qwen3-8B single pass 0.956 java / 0.909 rust.
+  B3. Older SFT (generic prompt, legacy 2-GPU config, NOT comparable config):
+        CodeNet java_rust v2 (4014958/59): tested java 0.982 / rust 0.911
+          (base same cfg 0.972 / 0.920) -> within run-to-run noise (0.02-0.04).
+        Track A strict (4014873): 0.912 vs base 0.920 -> no gain.
+  B4. Old CodeNet pools (codenet_train_python_*_clean.jsonl) are ~2 AOJ
+      problems (selection sort / truck allocation) -> unusable as SFT source.
+  B5. New data source = full Project CodeNet from HF iNeil77/CodeNet
+      (eval_data/e16a/codenet_hf/*.parquet, 2.1 GB; has p_id, status incl.
+      Accepted/Wrong Answer). Sample I/O from HF Elfsong/codenet_metadata
+      (eval_data/e16a/codenet_hf/meta.parquet -> eval_data/e16a/codenet_samples.json).
+      CLCCD test problem ids recovered by exact code matching
+      (test_pids_{java,rust}.json; 639 test problems excluded everywhere).
+      Pools (problem-disjoint from test AND dev vs train):
+        dev_python_java_codenet.jsonl 300 | dev_python_rust_codenet.jsonl 300  (E1)
+        train_python_java_codenet.jsonl 3620 (1810 problems) | train_python_rust_codenet.jsonl 1664 (832)
+        *_meta.jsonl hold p_id/s_id; check_leakage: 0 exact (near-dups are
+        Code-2 boilerplate on other problems, skipped for traces).
+  B6. E16a trace set (DONE): 297 traces = java 74 clone/75 non, rust 73/75,
+      273 distinct problems (max 3/problem). eval_data/e16a/traces_all_{java,rust}.jsonl
+      (from traces_{pilot,b1,b2,b3}_{L}.jsonl). Format per trace:
+        <analysis> Code 1 / Code 2 / comparison (Claude-written, per pair)
+        <code> runs ONLY Code 1 (candidate_code.py) on official CodeNet sample
+               inputs + small hand-written inputs, compares with "Code 2 expected
+               output (traced by hand)" = Code 2's REAL offline output
+        <output> real harness observation with execute_code2 OFF
+        <answer> clone / non-clone + reason
+      Non-clone traces run a REAL discriminating test (user choice): Code 2
+      prints something different or cannot process Code 1's input.
+      Dropped on purpose: clone pairs not equivalent on valid inputs or
+      multi-answer problems (java 3401, 2497; rust 1486, 793); outputs > 80
+      chars (java 702, 1387). Float formatting handled by input choice.
+  B7. Known caveats for the paper/SFT:
+      - pyonly prompt rule 7 says "print('not code clones') for clear
+        non-clones"; our non-clone traces run a test -> SFT overrides rule 7.
+      - the SFT model will likely NOT suit the 'tested' rule (it flips tested
+        non-clone leaves to clone) -> its rule MUST come from its own dev run
+        (A2 dev jobs), not be inherited from base.
+      - traces present Code 2 outputs as hand-traced; inputs kept small so this
+        is plausible for a 4B model.
+
+(C) HOW TO CHECK RESULTS (CPU-only, repo root rStar-XCCD/rstar-xccd,
+    source ../venv-qwen3/bin/activate)
+  - SFT 4185932: log.err shows "model_max_length=8192: keeping 297/297";
+    no "'loss': 0.0, 'grad_norm': 0.0" runs; sft_checkpoints/qwen3-4b-e16a-claude-pyonly
+    has top-level model-0000X-of-00004.safetensors; config.json vocab_size 151936.
+  - Any run, three rules:  python rescore_runs.py <run>.jsonl --lang {java,rust} [--calibrate]
+    (--calibrate only for CLCCD test files). Majority vote:
+    evaluate_clone_results.predict_label(tree, aggregation="majority").
+  - E1 decision: on each dev file compare current vs tested vs majority
+    ('full' column) -> freeze the best rule per language for BASE; do the same
+    on the SFT dev files for the SFT model. Then report test F1 ONLY under
+    the dev-chosen rule.
+  - Compare SFT test vs base python-only test on the same pairs (B1 pyonly rows).
+  - Rebuild traces if analyses change:
+      python eval_data/e16a/build_pyonly_traces.py --batch eval_data/e16a/batch_<b>_<L>.jsonl \
+        --analyses eval_data/e16a/analyses_<b>_<L>.json --out eval_data/e16a/traces_<b>_<L>.jsonl
+    (needs module load StdEnv/2023 python/3.11 java/17.0.6 and PATH=$HOME/.cargo/bin:$PATH)
+
+(D) NEXT STEPS (in order)
+  1. When A1 finishes: freeze the base rule per language from the dev set (E1).
+     Update main.tex (paper repo) to say the rule was chosen on a disjoint
+     CodeNet dev set.
+  2. When A2 finishes: SFT sanity checks (C), then SFT rule from its dev run,
+     then SFT vs base python-only on the full test sets.
+  3. E2: 3 seeds + paired bootstrap CIs for the winning system (base or SFT),
+     python-only config, and Qwen3-8B single pass on the same pairs.
+  4. E3 cost accounting (WALLCLOCK lines, token counts), E4 stronger baselines,
+     E7 MCC/per-source, E8 error analysis (plan).
+  5. Optional E16a top-up: python-only MINING (sampling) on
+     train_python_{L}_codenet.jsonl, keep verified trajectories, retrain.
+  6. E16b (deferred): dual-execution SFT (plan, E16 section).
+  7. E9 hard negatives: Wrong Answer submissions in codenet_hf enable
+     same-problem near-miss non-clones.
+  8. AFTER 1-2 (user, 2026-09-28): BASELINE REVISION -- compare against the
+     literature's best prompts, not pure inference with our prompt. Full plan:
+     BASELINE_REVISION_PLAN_2026-09-28.txt (fixes: 768-token cap, thinking off,
+     missing se/sct and 2511.01176 prompts, no seeds). Do this before E2.
+
+(E) CODE / FILE STATE (branch claude-session-2026-09-24, nothing pushed)
+  Commits: ff4a488 tag e0-frozen; b90a8e8 tag e5-ablation. Nothing committed
+  after that. eval_data/ AND *.sh are GITIGNORED -> all of the following exist
+  ONLY ON DISK (back them up / force-add before cleaning anything):
+    eval_data/e16a/  recover_test_pids.py, build_codenet_disjoint.py,
+                     select_and_verify.py, build_pyonly_traces.py,
+                     batch_*/analyses_*/traces_* (pilot,b1,b2,b3), traces_all_*,
+                     dev_/train_ pools + meta, codenet_samples.json, test_pids_*,
+                     leakage_*.txt, codenet_hf/ (2.1 GB parquet)
+    Qwen3/run_eval_e1_dev_pyonly_{java,rust}_qwen3_4b_1gpu.sh
+    Qwen3/run_sft_e16a_claude_pyonly_qwen3_4b_4gpu.sh
+    Qwen3/run_eval_e16a_sft_{dev,test}_{java,rust}_qwen3_4b_1gpu.sh
+  Python tooling venv for parquet: ../venv-data (duckdb); use it with
+    module load StdEnv/2023 python/3.11 (the eval venv ../venv-qwen3 untouched).
+  Disk: /project 472/954 GB (lfs quota -h -g def-khajezad /project).
+  Paper repo: ../../rStar-XCCD-Paper (main a7272de/3b21b35 pushed 2026-09-26;
+    RQ4 table tab:ablation-dual still EMPTY -> fill from B1 and reframe RQ4 as
+    a negative result).
+  Backup of this file before the 2026-09-28 rewrite: session scratchpad
+    SESSION_STATUS_backup_20260928.txt (temporary).
+
+================================================================================
+SUPERSEDED RESUME BLOCK (2026-09-26 02:50 -> 2026-09-28 17:10, kept verbatim)
+================================================================================
+OLD RESUME BLOCK (superseded; state as of 2026-09-28 17:10)
+================================================================================
+
+STATE 2026-09-28 -- EVERYTHING FINISHED, NOTHING QUEUED. Final numbers:
+ E5 ABLATION (base Qwen3-4B, full test sets, 1 GPU). F1 (P/R):
+   arm/lang       current          tested           old     majority  rl_train pick  Code2 staged/compiled  wall
+   pyonly java    0.884 (1.00/.79) 0.969 (1.00/.94) 0.956   0.829     tested         22 / 0                 9.5 h
+   dual   java    0.768 (1.00/.62) 0.878 (.79/.99)  0.762   0.723     tested         1165 / 1057            7.6 h
+   pyonly rust    0.689 (.99/.53)  0.917 (.94/.90)  0.902   0.584     tested         3 / 0                  5.8 h
+   dual   rust    0.712 (.97/.56)  0.492 (.33/.99)  0.684   0.687     current        937 / 622              5.9 h
+ -> DUAL EXECUTION IS WORSE for base Qwen3-4B under every rule's best pick
+    (java 0.969 -> 0.878, rust 0.917 -> 0.712). It runs Code 2 in 65-78%
+    of trees but misses clones (java FN 187 -> 339) and, in rust, breaks
+    the 'tested' premise (non-clone leaves that ran tests are mostly real
+    non-clones). The paper's RQ4 hypothesis is NOT supported for base 4B.
+    DECISION NEEDED: main method = python-only (+ tested rule), or keep
+    dual-exec only as an SFT target (E16).
+ SFT CodeNet java_rust v2 (4014958/59, generic prompt, legacy 2-GPU cfg):
+   java  tested 0.982 (P .991 R .973)  [base 09-24 same cfg: 0.972]  current 0.955 majority 0.929
+   rust  tested 0.911 (P .882 R .943)  [base 09-24 same cfg: 0.920]  current 0.884 majority 0.825
+   rl_train pick = tested for both. Java +0.010, rust -0.009 vs base:
+   within the 0.02-0.04 run-to-run noise -> needs seeds (E2) to claim.
+   This model almost never runs Code 2 (8 java / 1 rust trees).
+ Track A strict SFT (4014873) final: see UPDATE 03:20 -- no gain (0.912 vs 0.920).
+ DECISION 2026-09-28 (user): OPTION 1 -- paper main method = PYTHON-ONLY
+   (generic prompt, execute_code2 False) + 'tested' rule. Dual-exec stays
+   as the RQ4 negative result. Next: E1 (CodeNet dev set, pick rule) ->
+   E2 (3 seeds + bootstrap) + E3 (cost) on the python-only arm.
+ E16 (mostly-Claude-trace dual-exec SFT) was NEVER BUILT -- it waited for
+   the ablation. Existing Claude-trace data (built 09-24, generic prompt):
+   sft_trackA_rust_v2_strict.jsonl (130, 47 teacher) -> 4014873 no gain;
+   sft_hard_codenet_java_rust_v2.jsonl (45, 2 teacher) -> 4014958/59.
+   RE-SCOPED 2026-09-28 (user): E16a = Claude traces for the PYTHON-ONLY
+   method (ACTIVE); E16b = dual-exec SFT (DEFERRED, maybe after E16a).
+   Both recorded in EXPERIMENT_PLAN_2026-09-26.txt under E16.
+ E16a WORK LOG (2026-09-28):
+   - Non-clone traces: REAL discriminating test; SFT model's rule re-chosen
+     on rl_train/dev (user choice).
+   - Leakage check of CodeNet pools vs CLCCD test: eval_data/e16a/leakage_*.txt
+     (java 15 exact/64 near-dup, rust 2/100); flagged ids excluded.
+   - Pilot (eval_data/e16a/pilot_*.jsonl, diff_pilot_*.jsonl, 10+10 per lang)
+     exposed a BLOCKER: the CodeNet pools are ~2 problems (Code 1 is AOJ
+     selection sort or truck allocation in ~all pairs; SFT_DATA_PROCESS 9d
+     already noted this for the hard subset). Unfit as SFT source.
+   - NEW SOURCE: HF mirror iNeil77/CodeNet (full Project CodeNet: s_id, p_id,
+     status incl. Accepted/Wrong Answer, code). Downloading Python/Java/Rust
+     shards to eval_data/e16a/codenet_hf/ (download.log). Read with duckdb in
+     ../venv-data (module load StdEnv/2023 python/3.11; eval venv untouched).
+   - PLAN: build problem-DISJOINT (vs CLCCD test p_ids; rust test p_ids
+     recovered by matching Code 2 text) python-{java,rust} pools:
+     clones = two Accepted submissions of same problem; non-clones = different
+     problems. Split: E1 DEV set (~300/lang, frozen eval config) + E16a trace
+     source. Wrong Answer submissions -> E9 hard negatives later.
+   - DONE: test p_ids recovered (eval_data/e16a/recover_test_pids.py ->
+     test_pids_{java,rust}.json; java 600 CN records / rust 1200, all matched;
+     639 test problems excluded). Pools (build_codenet_disjoint.py):
+       dev_python_java_codenet.jsonl   300 (150/150)  -- E1 dev
+       dev_python_rust_codenet.jsonl   300 (75/225)   -- E1 dev (test ratio)
+       train_python_java_codenet.jsonl 3620 (1810 problems) -- E16a source
+       train_python_rust_codenet.jsonl 1664 (832 problems)  -- E16a source
+     check_leakage: 0 exact; near-dups are Code-2 boilerplate on other
+     problems (skipped when picking trace pairs). *_meta.jsonl = p_id/s_id.
+   - E1 SUBMITTED 2026-09-28 ~16:00: 4180592 (java, def-fard) / 4180593
+     (rust, def-khajezad), Qwen3/run_eval_e1_dev_pyonly_{java,rust}_qwen3_4b_1gpu.sh
+     (frozen pyonly config). Output eval_data/e16a/dev_python_{L}_codenet_depth_16
+     .jsonl.mcts.Qwen3-4B.e1-dev-pyonly.*.jsonl. Read ONLY the 'full' column
+     of rescore_runs (its rl_* columns use CLCCD indices -> meaningless here).
+     Pick the rule per language on these, then freeze it for E2.
+   - E16a PILOT DONE: sample inputs from HF Elfsong/codenet_metadata
+     (codenet_samples.json). select_and_verify.py -> batch_pilot_{L}.jsonl
+     (20/lang); Claude-written analyses_pilot_{L}.json; build_pyonly_traces.py
+     -> traces_pilot_{L}.jsonl (19 java + 20 rust, all harness-verified;
+     java 3401 dropped: two Accepted solutions disagree on valid inputs).
+     SFT file: sft_pilot_pyonly_full_prompt.jsonl (39, prompt = pyonly eval
+     prompt via build_full_prompts --cfg config/qwen3_4b_ablation_pyonly_1gpu.yaml;
+     2250-4321 tokens). Trace format: analysis x3 steps -> code runs ONLY Code 1
+     vs "expected Code 2 output (traced by hand)" = real offline output ->
+     real harness observation (execute_code2 off) -> answer.
+     CAVEATS: (a) prompt rule 7 says skip tests for clear non-clones, our
+     non-clone traces run a test (user choice) -> SFT overrides rule 7;
+     (b) keep hand-written inputs SMALL so Code 2 outputs are plausibly
+     traceable by a 4B model; (c) many non-clone cases are "Code 2 cannot
+     process this input" (different input formats).
+   - b1 DONE (2026-09-28 evening): traces_b1_java.jsonl 39, traces_b1_rust.jsonl 40
+     (java 702 skipped: Code 1 always prints a 100x100 grid). Running total
+     118 = java 29/29, rust 30/30.
+   - b2 DONE: traces_b2_java 45 (1387 skipped: output > 80 chars), traces_b2_rust 46.
+     Running total 209 = java 52/51, rust 53/53. build_pyonly_traces now
+     ignores empty-string sample inputs. E1 java 4180592 RUNNING 16:35.
+     b3 = last batch (java 23 clone/24 non, rust 22/22) -> ~150/lang.
+   - E16a CLAUDE-TRACE SET COMPLETE (2026-09-28 ~17:00): 297 traces
+     (java 74 clone/75 non, rust 73/75), 273 distinct Code-1 problems (max 3
+     per problem), all harness-verified. traces_all_{java,rust}.jsonl;
+     SFT file eval_data/e16a/sft_e16a_claude_pyonly_full_prompt.jsonl
+     (pyonly eval prompt; median 2888 tokens, max 4321, none > 8192).
+     Deliberately dropped (clone pairs NOT behaviourally equivalent on valid
+     inputs or multi-answer problems): java 3401, 2497; rust 1486, 793.
+     Also dropped: outputs > 80 chars (java 702, 1387). Float formatting
+     (py '1' vs java '1.0'; rust f64 '5' vs py '5.0') handled by input choice.
+   - E1 jobs RUNNING since ~16:35/16:40.
+   - E16a SFT SUBMITTED 2026-09-28 ~17:10 (user: train now on the 297 traces):
+       4185932 q3-4b-sft-e16a-claude-pyonly  Qwen3/run_sft_e16a_claude_pyonly_qwen3_4b_4gpu.sh
+               -> sft_checkpoints/qwen3-4b-e16a-claude-pyonly (4 GPU, 2 h limit)
+       afterok evals (python-only config, 1 GPU):
+       4185933 dev java / 4185934 dev rust   run_eval_e16a_sft_dev_{L}_qwen3_4b_1gpu.sh
+               -> choose the SFT model's rule ('full' column of rescore_runs)
+       4185935 test java / 4185936 test rust run_eval_e16a_sft_test_{L}_qwen3_4b_1gpu.sh (24 h)
+               -> report with the dev-chosen rule; compare to base python-only
+                  (java tested 0.969 / rust tested 0.917, 4018934/35) and to
+                  Qwen3-8B single pass (0.956 / 0.909).
+     SFT checks: log.err 'keeping 297/297', no all-zero-loss steps, vocab 151936,
+     top-level safetensors only.
+   - NEXT: (a) E1 result -> freeze rule; (b) optional self-generated top-up
+     (python-only mining on train pools) per plan; (c) SFT on the 297 traces
+     (4 GPU, <1 h; copy Qwen3/run_sft_trackA_rust_v2_strict_fixed_qwen3_4b_4gpu.sh,
+     point at sft_e16a_claude_pyonly_full_prompt.jsonl); (d) eval on full CLCCD
+     java+rust with the pyonly config, choose rule on E1 dev set.
+   - NEXT: scale E16a (target ~150 traces/lang, balanced) with the same
+     scripts (--name b1 --exclude batch_pilot_{L}.jsonl), then self-generated
+     top-up, SFT, eval on full CLCCD test sets with the rule re-chosen.
+
+UPDATE 03:20 EDT:
+  - Ablation started 02:43. 4018936 (dualexec-java) was CANCELLED: its
+    launcher did not load java/17.0.6, so javac was missing and every Java
+    Code 2 compile failed (0/60). Partial output renamed to
+    ...ablation-dualexec.def-fard_gpu.20260926024439.jsonl.invalid-no-javac.
+    All 4 ablation launchers now load java/17.0.6; RESTARTED as 4020309
+    (fresh run, no resume). Other 3 arms unaffected (python-only never
+    compiles Code 2; rust uses rustc from ~/.cargo, 37 compiled early on).
+    NOTE: earlier Qwen3 eval launchers (9/24 base runs, 4014958) also lack
+    java -> their few Java Code 2 attempts could never compile.
+  - Early dual-exec behaviour: Code 2 tried in 63% (java, pre-fix) / 78%
+    (rust) of trees vs ~0-1% python-only; rust: 37 compiled, 22 crate-refused.
+  - 4014873 Track A strict FINAL (110 held-out, 60 clone), SFT vs base on
+    the same pairs; SFT tried Code 2 in 52/110 trees:
+        rule       base F1 (P/R)          SFT F1 (P/R)
+        old        0.9189 (1.000/0.850)   0.8824 (0.789/1.000)
+        current    0.6667 (1.000/0.500)   0.8824 (0.789/1.000)
+        tested     0.9204 (0.981/0.867)   0.8759 (0.779/1.000)
+        majority   0.5542 (1.000/0.383)   0.9120 (0.877/0.950)
+    Best-vs-best: base 0.920 vs SFT 0.912 -> no clear gain; SFT trades
+    missed clones for false clones. Both "best" picks were made on held-out.
+
+UPDATE 03:55 EDT -- EARLY ABLATION SIGNAL (partial, NOT final):
+  Progress: pyonly java 195/1800, pyonly rust 217/1200, dualexec java
+  118/1800 (restart 4020309), dualexec rust 210/1200. ETA ~6-10 h.
+  On COMMON pairs (java 119, rust 211):
+    java  current  pyonly 0.860 (FN 15) vs dual 0.674 (FN 30)
+          tested   pyonly 0.939 vs dual 0.889 (dual: 14 FP)
+    rust  current  pyonly 0.639 vs dual 0.649
+          tested   pyonly 0.918 vs dual 0.450 (114 FP -- premise broken)
+          majority pyonly 0.469 vs dual 0.611
+  Dual-exec java misses more clones; FNs are mostly CodeNet stdin programs
+  (22/31). Example (index 1): model defines run_both() then answers
+  non-clone WITHOUT calling it. 'Code 2 compiled' only means a step
+  mentioned java -- it does NOT mean outputs were compared. Need a metric
+  'both outputs observed' (E8) before interpreting RQ4.
+
+DECISION 04:40 EDT (user, supersedes 04:15): E16 MAIN = mostly
+  Claude-written traces (user: research use allowed; official written
+  permission requested -- file it when received); COMPARISON = mostly
+  self-generated. Still WAIT for the ablation before starting.
+DECISION 04:15 EDT (user, superseded): E16 main SFT = SELF-GENERATED
+  ONLY; a variant adding a few Claude-written traces is trained only with
+  Anthropic's written permission (terms checked, see E16). Still WAIT for
+  the ablation.
+DECISION 04:00 EDT (user): dual-execution SFT = EXPERIMENT_PLAN E16.
+  Arm A (primary): mostly Claude-written traces. Arm B (comparison, cheap
+  because the mining run is shared): mostly self-generated. WAIT for the
+  E5 ablation to finish before starting anything for E16. First step after
+  the ablation: build the "both outputs observed" detector (E8), then the
+  CodeNet mining run with the dual-exec prompt.
+
+(1) JOBS IN FLIGHT
+  Logs: Qwen3/<job-name>_<jobid>.log.{out,err}; outputs in eval_data/.
+
+  a) ABLATION -- python-only vs dual execution (plan E5), MAIN TASK NOW
+     Base Qwen3-4B, full CLCCD test sets, 1 GPU each, 24 h limit (resume by
+     resubmitting the same launcher). PENDING at 02:40 with ReqNodeNotAvail
+     (5 GPU nodes down); Slurm estimated start ~04:15.
+       4018934  q3-4b-ablation-pyonly-java    Qwen3/run_eval_ablation_pyonly_java_qwen3_4b_1gpu.sh
+       4018935  q3-4b-ablation-pyonly-rust    Qwen3/run_eval_ablation_pyonly_rust_qwen3_4b_1gpu.sh
+       4020309  q3-4b-ablation-dualexec-java  Qwen3/run_eval_ablation_dualexec_java_qwen3_4b_1gpu.sh  (restart of 4018936)
+       4018937  q3-4b-ablation-dualexec-rust  Qwen3/run_eval_ablation_dualexec_rust_qwen3_4b_1gpu.sh
+     Arms (configs committed, tag e5-ablation):
+       python-only = config/qwen3_4b_ablation_pyonly_1gpu.yaml
+                     generic prompt (mcts_prompt.json + few_shot_imprvoed.json),
+                     execute_code2 False (Code 2 never runs; model is told so)
+       dual-exec   = config/qwen3_4b_ablation_dualexec_{java,rust}_1gpu.yaml
+                     language-specific prompt (= methodology.tex Fig.) +
+                     few-shots that run BOTH programs (java v2: 2 examples;
+                     rust v3: 3 examples), execute_code2 True
+     Both = frozen E0 config otherwise (1 GPU, strict Rust crate check).
+     Output files: eval_data/test_python_{java,rust}_CLCCD_depth_16.jsonl
+                   .mcts.Qwen3-4B.ablation-{pyonly,dualexec}.<account>.<ts>.jsonl
+     Expected: ~19 s/pair -> java ~9.5 h, rust ~6.5 h; dual-exec slower
+     (compiles). Each log ends with an "ABLATION ..." line (Code 2 tried /
+     compiled / blocked) and rescore_runs.py --calibrate output.
+
+  b) SFT RETRAIN EVALS (both SFT bugs fixed; GENERIC prompt, legacy 2-GPU
+     config -- comparable to the base-model baselines in PART C)
+       4014873  Track A strict (fixed) on rl_heldout_strict (110)   93/110 done at 02:40
+                model sft_checkpoints/qwen3-4b-trackA-rust-v2-strict-fixed
+       4014958  CodeNet java_rust v2 on full java (1800)   117 done at 02:40, ~2.5 days
+       4014959  CodeNet java_rust v2 on full rust (1200)   121 done at 02:40, ~1.5 days
+                model sft_checkpoints/qwen3-4b-hard-codenet-java-rust-v2
+       (twins 4014956 / 4014961 exited by design)
+
+(2) WHAT WE KNOW SO FAR (details in the UPDATE notes and PARTS below)
+  - Both SFT bugs are fixed and verified (special tokens; 2048 truncation).
+    Every SFT checkpoint trained before 2026-09-25 is invalid.
+  - All Qwen3-4B numbers to date used the GENERIC prompt: the model tried to
+    run Code 2 in only 0.3% (rust) / 0.9% (java) of trees. The paper's
+    "execute both programs" method has never been run for Qwen3-4B -> the
+    ablation in (1a). With the language-specific prompts, Qwen2.5-Coder-3B/7B
+    ran Code 2 in 20-39% of trees.
+  - Single-pass baselines on the same pairs (pure_inference/offline_results):
+    Qwen3-8B 0.9559 java / 0.9088 rust = the number to beat.
+  - EARLY Track A SFT result (93/110, NOT final, rule picked by looking):
+    fixed SFT model runs Code 2 in 46% of trees even under the generic
+    prompt (learned from the teacher traces). Same 93 pairs:
+        rule        base F1 (P/R)            SFT F1 (P/R)
+        current     0.711 (1.000/0.551)      0.883 (0.790/1.000)
+        new/tested  0.913 (0.977/0.857)      0.875 (0.778/1.000)
+        majority    0.592 (1.000/0.420)      0.913 (0.887/0.940)
+    SFT flips the error from false negatives to false positives; the
+    clone-leaning rules hurt it, majority vote suits it. Rule must be chosen
+    per model on rl_train, not on held-out (E1).
+  - Qwen2.5-Coder-3B: the new "tested" rule HURTS it (rule is model-specific).
+
+(3) HOW TO CHECK / RE-DERIVE RESULTS (all CPU-only, from the repo root
+    rStar-XCCD/rstar-xccd with ../venv-qwen3 activated)
+  - Three rules + calibration:  python rescore_runs.py <run>.jsonl --lang {java,rust} --calibrate
+  - Majority vs clone-on-disagreement: evaluate_clone_results.predict_label(
+    tree, aggregation="majority" | "clone-on-disagreement")
+  - Response / no-response rate: python evaluate_clone_results.py <run>.jsonl <out.txt>
+    (fixed 2026-09-26: "Response rate" = judged/total; older _result files
+    print the NO-response share under that label)
+  - Did the model run Code 2? Count trees whose node "text" contains
+    "Code 2 (Java)" / "Code 2 (Rust)" (staged), "... compiled" (success),
+    "external crate" (refused) or "Code 2 cannot be executed in this setting"
+    (python-only arm).
+  - Compare SFT vs base on the SAME indices: base trees are
+    eval_data/test_python_{java,rust}_CLCCD_depth_16.jsonl.mcts.Qwen3-4B.newrule-tested-agg.*.jsonl
+    (rl_heldout_strict indices are a subset of the rust test indices).
+
+(4) NEXT STEPS
+  1. When 4014873 finishes: full three-rule + majority comparison vs base on
+     all 110, with the rule chosen on rl_train (E1 protocol).
+  2. When the ablation (1a) finishes: table python-only vs dual-exec per
+     language (F1/P/R under each rule, response rate, % trees running Code 2,
+     compile success, wall-clock). Decide whether dual-exec becomes the
+     paper's main method (expected yes -> it is what methodology.tex says).
+  3. Then E1 (choose aggregation rule on a CodeNet dev set) and E2 (3 seeds
+     + bootstrap CIs) on the winning arm; E3 cost accounting from the
+     WALLCLOCK lines; E4 stronger baselines.
+  4. Next SFT round: rebuild training prompts with the dual-exec prompt
+     (current Track A SFT prompts were built with the generic prompt while
+     the teacher traces run both programs -> train/eval mismatch).
+  5. Known limits to report: ~1/3 of rust Code 2 programs (89/300) need
+     crates (proconio, ...) and cannot run offline; java v2 vs rust v3 use
+     2 vs 3 few-shot examples.
+
+(5) CODE STATE (branch claude-session-2026-09-24, nothing pushed)
+  ff4a488  tag e0-frozen   SFT fixes, strict rust crate check (opt-in),
+                           response-rate fix, frozen config, MCTS UCT fix
+  b90a8e8  tag e5-ablation execute_code2 switch + 3 ablation configs
+  Uncommitted by design: the user's own edits (methodology.tex,
+  SFT_DATA_PROCESS.txt, SESSION_STATUS_2026-09-24.txt) and all *.sh
+  launchers (gitignored repo-wide; they exist only on disk in Qwen3/).
+  Disk: /project/def-khajezad ~489/954 GB (lfs quota) after deleting old
+  checkpoint-N dirs; SFT launchers now save final weights only.
+
+(6) PAPER (separate repo, cloned 2026-09-26)
+  /lustre06/project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD-Paper
+  (git@github.com:mkhfring/rStar-XCCD-Paper.git, branch main). main.tex
+  updated 2026-09-26, committed + pushed as a7272de: RQ4 (python-only vs dual execution),
+  corrected UCT rule + unvisited-first guard, tested non-clone rule and
+  dev-set selection, Rust crate limit (89/300 programs, 356/1200 pairs),
+  prompt/few-shot finding, Tables tab:code2-execution-rate,
+  tab:ablation-dual (EMPTY -- fill from 4018934-37), tab:aggregation-effect.
+  Open items are red \MK{} notes in main.tex.
+  03:40: further edits, committed + pushed as 3b21b35: evaluator uses Qwen3-4B
+  evidence (tested-rule premise 94% earlier prompt vs 22% dual-exec rust,
+  partial) instead of Qwen2.5-Coder-3B; paper focus is Qwen3-4B only.
+  Tested non-clone rule is NOT verified: premise breaks under dual-exec
+  rust; must be selected per prompt+language on the dev set (E1). Local TeX needs
+  pgfplots compat=1.16 to build (the file says 1.18; left unchanged).
+
+================================================================================
+HISTORY OF THIS SESSION (older notes, kept for detail)
+================================================================================
 
 UPDATE 2026-09-26 02:10 -- progress since this file was written:
   - A1 sanity 4012716 PASSED: 20/20 trees with <code>, 13/20 with a real
@@ -52,7 +1012,7 @@ UPDATE 2026-09-26 02:40 -- PROMPT FINDING + ABLATION SUBMITTED:
     print "ABLATION ..." (Code 2 tried/compiled/blocked) and rescore_runs.py
     --calibrate output at the end. 24 h limit, resume by resubmitting.
   - New config key execute_code2 (default True; python-only arm = False).
-    NOT yet committed (e0-frozen tag predates it).
+    Committed afterwards as b90a8e8, tag e5-ablation.
 
 PART A -- JOBS IN THE QUEUE (submitted 2026-09-25/26, all PENDING at writing)
 --------------------------------------------------------------------------------

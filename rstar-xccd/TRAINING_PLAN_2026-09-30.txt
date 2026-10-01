@@ -1,0 +1,119 @@
+================================================================================
+ Training plan: teach Qwen3-4B to detect SAME-TASK near-miss non-clones by
+ running both programs (reinforcement / rejection-sampling fine-tuning)
+ Written 2026-09-30 (user request).
+ STATUS 2026-10-01 (user decision): this plan is now a FOLLOW-UP PAPER, not part of the
+ current paper, provided the extension (auto_code2 harness + java prompt v3) holds on the
+ locked sets. Step 1 DONE (outcome moved from C to A after the harness fixes). Step 2: Java
+ pool done (pool_java_train.jsonl, 427 problems, 450 bug pairs); Rust has almost no data ->
+ train on Java, evaluate Rust as transfer; input generators deferred. Steps 3-4 deferred.
+ Evaluation sets for the follow-up = the LOCKED sets hardeval_python_{java,rust}_codenet.jsonl.
+ Training must sample from the frozen extension config, not the old dual-exec config.
+ Companion files: SESSION_STATUS_2026-09-26.txt (RESUME HERE -> (NOW)),
+ ../../rStar-XCCD-Paper/PAPER_COMPLETION_PLAN_2026-09-30.md (paper minimum plan).
+================================================================================
+
+0. WHY (evidence from 2026-09-30)
+--------------------------------------------------------------------------------
+Hard-negative pilot (eval_data/e16a/hard_python_{L}_codenet*.jsonl: Accepted
+Python vs WRONG ANSWER Java/Rust of the SAME problem, difference verified on the
+official sample input):
+  * SCB (python-only + tested rule) calls 73% (java) / 83% (rust) of the buggy
+    programs clones. phi-4 and Qwen3-4B-think fail the same way (FPR .53-.83).
+  * Diagnosis (diagnose_hard_negatives.py): tests almost never expose the bug --
+    a run showed a mismatch in 1-2% of trees; the official sample input was used in
+    1-3%; ~25% of "tests" are hollow (e.g. only `import subprocess`), ~30-40% crash.
+    In python-only mode Code 2 is never run and the model does not predict its
+    output, so no test CAN expose a Code-2 bug. Discrimination comes only from
+    reading (and the model sometimes reads the bug, e.g. p02970 `2*d - 1` vs
+    `2*D + 1`, then calls the code identical).
+LESSON FROM E16a (failed SFT, dev F1 .97 -> .64): traces that showed Code-2
+outputs "traced by hand" taught the 4B model to assert outputs it cannot compute.
+RULE FOR EVERYTHING BELOW: train only behaviour whose outcome the harness can
+verify; never train the model to state values it cannot compute.
+
+1. STEP 1 -- DUAL-EXECUTION PILOT ON THE HARD SET (RUNNING)
+--------------------------------------------------------------------------------
+Existing dual-exec arm (config/qwen3_4b_ablation_dualexec_{java,rust}_1gpu.yaml,
+examples run BOTH programs) on the hard-negative set, base Qwen3-4B, no training.
+  jobs (twin guard khajezad / fard): java 4324939 / 4324940, rust 4324941 / 4324942
+    (first try 4315434-37 lost to a guard race, fixed in Qwen3/twin_guard.inc)
+  launchers Qwen3/run_eval_hard_dualexec_{L}_qwen3_4b_1gpu.sh
+  score:    python eval_data/e16a/score_hard_negatives.py --lang L   (all rules)
+  diagnose: python eval_data/e16a/diagnose_hard_negatives.py --lang L --arm dualexec  (ready, validated)
+            (did Code 2 compile + run, did BOTH outputs appear, did they differ,
+             what did the verdict say)
+DECISION GATE:
+  A. Code 2 runs AND outputs differ on many hard negatives, and verdict rules
+     (current/majority) cut FPR clearly below python-only (.46/.51) without losing
+     most clone recall -> the behaviour exists; training amplifies it. Go to 2.
+  B. Code 2 runs, outputs differ, but the verdict ignores the difference -> the
+     reward must target the VERDICT step (consistency with observed outputs).
+  C. Code 2 rarely runs / mostly fails to build -> fix harness + prompt first
+     (crates, class names, input plumbing) before any training.
+  D. No signal at all -> stop; paper uses the benchmark finding (plan option 1).
+
+2. STEP 2 -- TRAINING POOL + TEST-INPUT GENERATORS (CPU, ~3-4 days)
+   STARTED 2026-09-30 in parallel with step 1: build_training_pool.py, CPU job 4329331.
+   Remaining problems: java 708, rust 133 (bottleneck, ~60 usable).
+--------------------------------------------------------------------------------
+  * Pairs from problems DISJOINT from CLCCD test, dev, the hard eval set and the
+    E16a trace problems (build_hard_negatives.py excluded_pids() + the hard set).
+    Target per language: ~1,000 clones, ~1,000 same-problem WA non-clones (output
+    difference verified), ~500 cross-problem non-clones. CodeNet has 193k WA
+    Java / 29k WA Rust submissions; java yield ~65%, rust ~45% per problem.
+  * Test-input generators per problem (Claude-written tooling, NOT training
+    targets): produce many valid inputs beyond the single official sample, so
+    more bugs become verifiable (labels) and rewards can check "found a
+    distinguishing input". Validity check: >=2 independent Accepted solutions
+    agree AND the generator respects the stated constraints (spot-check by hand;
+    the mutation approach broke constraints in the smoke test).
+  * A new, larger locked hard EVAL set (same construction, generator inputs)
+    for the final numbers; the 250-pair pilot sets become dev.
+
+3. STEP 3 -- REJECTION-SAMPLING FINE-TUNING, rStar-Math style (recommended first)
+--------------------------------------------------------------------------------
+  * Sample dual-exec search trees on the training pool (existing mining configs,
+    sampling on, e.g. best_of 4, iterations 3; ~20-30 GPU-h per round).
+  * KEEP a trajectory only if: final label correct AND the harness log shows both
+    programs ran on the same input (both outputs observed) AND, for non-clones, a
+    distinguishing input was found; no hollow/crashed-only tests; verdict
+    consistent with the observed outputs. Balance clone / hard / cross.
+  * SFT (train_SFT.py with the fixes: token init, --model_max_length 8192,
+    fully-masked check, save final weights only), <1 h on 4 A100.
+  * Choose the aggregation rule on dev for the fine-tuned model (NOT inherited).
+  * Iterate 2-3 rounds (new model samples the next round).
+  Optional cold start (only if round 1 yields too few verified trajectories):
+    200-500 Claude-written traces in the "run both, compare REAL outputs" format:
+    every output/comparison is a harness observation; Claude writes only the
+    analysis and chooses the inputs. Disclose as distillation. PERMISSION STATUS
+    (2026-10-01 email from Anthropic support): use case approved (task-specific academic
+    classifier; own verified outputs + a small number of worked examples); formal written
+    authorization pending -> use Claude-written traces only after it arrives, keep them small.
+
+4. STEP 4 -- GRPO WITH VERIFIABLE REWARD (only if step 3 helps but plateaus)
+--------------------------------------------------------------------------------
+  Reward per trajectory (all computed from harness logs, no teacher):
+    +1 / -1 final label (class-weighted so hard negatives count equally)
+    + small bonus: both programs executed on the same input
+    + bonus: non-clone AND a distinguishing input found
+    - penalty: hollow code, crash-only tests, verdict contradicting observed outputs
+  Batches must contain same-problem negatives so "tested => clone" stops paying.
+  Needs a multi-turn tool-use RL framework (verl / TRL multi-turn): ~1-2 weeks
+  infrastructure. 4 A100, LoRA or full FT.
+
+5. EVALUATION PROTOCOL
+--------------------------------------------------------------------------------
+  Locked hard eval set (step 2) + CLCCD test sets; rule chosen on dev; report
+  clone recall, FPR hard / cross, F1 hard / cross, response rate; compare with
+  base SCB (python-only, dual-exec), Qwen3-4B-think, phi-4. 3 seeds for the final
+  system. Paired bootstrap by problem.
+
+6. COST / TIMELINE (estimates)
+--------------------------------------------------------------------------------
+  Step 1: ~4 GPU-h (running).  Step 2: 3-4 days CPU.  Step 3: 2 rounds x
+  (~25 GPU-h sampling + ~1 GPU-h SFT + ~5 GPU-h eval).  Step 4: 1-2 weeks infra
+  + ~50-100 GPU-h.  Total 3-5 weeks incl. queue. Does NOT fit the paper's minimum
+  plan: either a follow-up paper, or delay the current paper if step 1 is strong.
+  All GPU jobs: twin-guard pairs on def-khajezad_gpu + def-fard_gpu (Qwen3/twin_guard.inc).
+================================================================================

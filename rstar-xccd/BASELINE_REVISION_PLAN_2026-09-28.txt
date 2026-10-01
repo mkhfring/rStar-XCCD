@@ -1,0 +1,90 @@
+================================================================================
+ Baseline revision plan: compare against the LITERATURE's best prompts,
+ not against pure inference with OUR prompt
+ Written 2026-09-28. Status 2026-09-30: W2 (thinking on, Qwen3 4B/8B/14B/32B,
+ 8192 tok, T .6) and dev-set prompt choice DONE; W1 only for thinking-on runs
+ (thinking-off runs still use 768 tok, T .3 -- fine for sp2/sp1/sim, not reas/sl); extra models (phi-4, Mistral-7B,
+ DeepSeek x2, StarCoder2, StarChat, Falcon) and n=16 self-consistency DONE.
+ Results: eval_data/e16a/baselines_summary_2026-09-30.txt. STILL OPEN: W3
+ (se/sct, 2511.01176 prompts), W4 (3 seeds). Was: PLANNED (user: finish the running
+ E1 / E16a work first, then implement this). Companion to
+ EXPERIMENT_PLAN_2026-09-26.txt (affects E2, E4, E5) and
+ SESSION_STATUS_2026-09-26.txt (RESUME HERE, next steps).
+================================================================================
+
+1. WHY (user decision 2026-09-28)
+--------------------------------------------------------------------------------
+The prompt is part of our approach's contribution. The current "pure
+inference" baselines (pure_inference/offline_inference_fine_tuned_model_
+extended_experiments.py, config pure_inference/config/qwen3_*_clccd.yaml)
+use a prompt ADAPTED FROM OUR OWN mcts_prompt.json, so they already contain
+part of our contribution. Headline comparisons (e.g. Qwen3-4B + our approach
+vs Qwen3-8B) must instead be against the BEST PROMPTS FROM THE LITERATURE.
+"Our prompt, single pass" stays in the paper as an ABLATION step:
+  literature prompt -> our prompt -> + execution/search -> + SFT.
+
+2. WHAT WE ALREADY HAVE (runs of 2026-09-12, jobs 2953941-44; logs
+   q{2.5-3b,2.5-7b,3-4b,3-8b}-paper-prompts_*.log.out; outputs
+   eval_data/paper_prompt_replication/*.jsonl; runner
+   pure_inference/run_clccd_paper_prompts.py; scorer score_clccd_paper_prompts.py)
+--------------------------------------------------------------------------------
+CLCCD paper (Moumoula et al., FSE 2025, arXiv 2408.04430) single-call
+prompts sp1, sp2, sim, reas, inte, sl on our exact test pairs. F1 (resp. rate):
+                 java best          rust best
+  Qwen3-8B       sp2 0.907 (1.00)   sp2 0.699 (1.00)
+  Qwen3-4B       sp2 0.854 (1.00)   sp2 0.681 (1.00)
+  Qwen2.5-C-7B   sp2 0.890          sp2 0.595
+  Qwen2.5-C-3B   sp2 0.846          sp2 0.308
+For reference (our prompt, single pass): Qwen3-8B 0.956 / 0.909,
+Qwen3-4B 0.877 / 0.481. Our approach, Qwen3-4B python-only + tested rule
+(E5): 0.969 / 0.917.
+Published: GPT-3.5-Turbo best CLCCD prompt on the same 1800 java pairs 0.9239.
+
+3. KNOWN WEAKNESSES OF THOSE RUNS (reviewers would object) -> MUST FIX
+--------------------------------------------------------------------------------
+  W1. max_tokens=768: reasoning-style prompts (reas, sl, inte) are truncated;
+      response rates only 0.54-0.82. -> rerun with max_tokens ~4096 and report
+      the unanswered share explicitly.
+  W2. enable_thinking=False for Qwen3. The strongest "bigger model" competitor
+      is Qwen3-8B WITH its native thinking. -> add a thinking-on arm (large
+      max_tokens, parse the answer after </think>).
+  W3. Missing prompts: CLCCD multi-stage "se" (separate explanation, 5 calls)
+      and "sct" (separate code, 3 calls); the 4 prompts P0-P3 of the empirical
+      study arXiv 2511.01176 (related-work-prompts/empirical_study_llm_clone_
+      detection_2511.01176.md). -> implement and run.
+  W4. Single sample at temperature 0.3, no seeds/CIs. -> 3 seeds for the
+      chosen best prompt per model, paired bootstrap CIs (as E2).
+
+4. PROTOCOL
+--------------------------------------------------------------------------------
+  - Best literature prompt chosen PER MODEL AND LANGUAGE on the E1 dev set
+    (eval_data/e16a/dev_python_{java,rust}_codenet.jsonl), same principle as
+    our aggregation rule. Fallback if time is short: choose on test and say so
+    (this only favours the baselines).
+  - Main table: Qwen3-4B and Qwen3-8B x {best literature prompt, thinking off;
+    best literature prompt, thinking on}; published GPT-3.5 number (cited);
+    our approach (base python-only and E16a SFT). 3 seeds + paired bootstrap
+    CI + McNemar vs our approach on the same pairs.
+  - Ablation table: our prompt single pass (existing pure-inference runs,
+    rerun under the same seeds) -> + execution/MCTS -> + SFT.
+  - Cost columns (E3) for every row: calls, tokens, GPU-seconds per pair
+    (thinking-on makes the 8B much more expensive -- report it).
+
+5. IMPLEMENTATION STEPS (when resumed)
+--------------------------------------------------------------------------------
+  1. run_clccd_paper_prompts.py: add --enable_thinking, raise --max_tokens
+     default, add --datafile for the dev sets, add se/sct (multi-call) and the
+     2511.01176 prompts; keep the answer parser robust to <think> blocks.
+  2. Launchers (Qwen3/) for Qwen3-4B and Qwen3-8B: dev sets (all prompts,
+     both thinking modes) -> pick best -> test sets, 3 seeds.
+  3. Score with score_clccd_paper_prompts.py + bootstrap script (E2).
+  4. Paper: rewrite the baseline section and the main table; move "our
+     prompt single pass" to the ablation.
+  Rough cost: 10-20 GPU-h (single-call; thinking-on 8B dominates).
+
+6. EXPECTED RISK
+--------------------------------------------------------------------------------
+  Qwen3-8B with thinking may narrow the gap. Still report it; if it gets
+  close, lean on cost (E3): a 4B model matching an 8B reasoning model at lower
+  cost. Keep the old "8B + our prompt" number in the ablation, do not drop it.
+================================================================================

@@ -152,6 +152,9 @@ class BaseConfig:
     execute_code2: bool = field(
         default=True, metadata={"help": "stage/compile Code 2 when a step tries to run it; False = python-only ablation arm (the step is told Code 2 cannot be executed)"}
     )
+    auto_code2: bool = field(
+        default=False, metadata={"help": "harness-side dual execution: after each code step, run Code 1 AND Code 2 on every input the step fed to a Python program and append both outputs (needs execute_code2); see python_tool.auto_compare_code2"}
+    )
     rust_crate_check: str = field(
         default="legacy", metadata={"help": "'legacy' (pre-2026-09-26 regex) or 'strict' (comments stripped, local mods/types excluded) external-crate detection for Rust Code 2; see python_tool.rust_external_crates"}
     )
