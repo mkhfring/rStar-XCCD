@@ -25,6 +25,22 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-01 21:30: SECOND HARNESS FAULT FOUND + FIXED: model test code runs IN-PROCESS, so a
+      step calling exit()/sys.exit()/quit() killed the whole search job SILENTLY with status 0.
+      SCB seed-1 java (4410642) stopped at 740/1800 this way at 18:52 ("COMPLETED").
+      FIX: python_tool.PythonInterpreter._base_run catches SystemExit -> observation
+      "SystemExit: <code>". Tested. No effect on runs that never hit it (all earlier reported
+      runs completed every pair). RESUBMITTED seed-1 java on the SAME branch (resume from 740):
+      jobs 4441689 / 4441690 (12 h limit). Rust seeds 1+2 DONE (1200 each). Still running with the OLD code
+      (could die the same way): java seed2 4410644, java ext 4410646, rust ext 4410652 ->
+      CHECK pair counts when they end (1800/1200) and resume if short.
+  *** 2026-10-01 16:30 WRITING STARTED (user OK): paper commit (LOCAL, not pushed) drafts:
+      new RQ3 (same-task hard negatives, Table tab:hard-negatives, tree diagnosis on the locked
+      sets), new subsection subsec:hard_negatives, cost paragraph + Table tab:cost in RQ2, old RQ3
+      renamed 'Reliability of the comparison'. Compiles clean. NEXT WRITING: rewrite RQ4
+      (plain dual-exec collapses on CLCCD after the harness fix: F1 .416 current; extension =
+      harness-side dual execution, locked-set results; extension-on-CLCCD run pending), RQ list
+      wording for RQ4, intro/contributions/abstract, Discussion, Threats, Conclusion.
   *** 2026-10-01 15:50: COST DONE -> eval_data/e16a/cost_summary_2026-10-01.txt (script cost_summary.py).
       100 pairs/lang, A100-40GB, load time removed. GPU-s/pair java/rust; gen tok/pair; weights:
         SCB 20.8/19.2 s, ~1,090 tok, 7.6 GiB | Extension 19.7/22.6 s, ~975 tok, 7.6 GiB

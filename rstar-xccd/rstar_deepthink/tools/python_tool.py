@@ -587,7 +587,11 @@ class PythonInterpreter(BaseModel):
                 run_flag, ret = _sub_run(tree.body[start_idx + 1:end_idx + 1])
                 ret_strs.append(f"{extract_content(node_source)} {ret}")
             return "".join(ret_strs)
-        except Exception as e:
+        except (Exception, SystemExit) as e:
+            # SystemExit (2026-10-01): model code runs in THIS process, so a step that
+            # calls exit()/sys.exit()/quit() used to terminate the whole search job
+            # silently with status 0 (SCB seed-1 java run stopped at pair 740). Report
+            # it as the step's output, as a separate Python process would have exited.
             return "{}: {}".format(type(e).__name__, str(e))
     
     def run(
