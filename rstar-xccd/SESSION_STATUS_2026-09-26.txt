@@ -25,6 +25,11 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-01 22:00 PLANNED (user, option b; not yet started): SEARCH-SCORE ABLATION, see
+      ../../rStar-XCCD-Paper/PAPER_COMPLETION_PLAN_2026-09-30.md section 00b. At the current budget
+      (iterations 2 = n_generate_sample 2) the scores cannot change selection. Plan: dev sets,
+      iterations {4,8} x scores {on (v1 +1/-1), off (rewards 0/0)} x {java,rust}; then confirm the
+      best budget on CLCCD test. ~30-45 + 20-40 GPU-h. NEW branch names. Needs user go-ahead to submit.
   *** 2026-10-01 21:30: SECOND HARNESS FAULT FOUND + FIXED: model test code runs IN-PROCESS, so a
       step calling exit()/sys.exit()/quit() killed the whole search job SILENTLY with status 0.
       SCB seed-1 java (4410642) stopped at 740/1800 this way at 18:52 ("COMPLETED").
