@@ -29,7 +29,15 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
       ../../rStar-XCCD-Paper/PAPER_COMPLETION_PLAN_2026-09-30.md section 00b. At the current budget
       (iterations 2 = n_generate_sample 2) the scores cannot change selection. Plan: dev sets,
       iterations {4,8} x scores {on (v1 +1/-1), off (rewards 0/0)} x {java,rust}; then confirm the
-      best budget on CLCCD test. ~30-45 + 20-40 GPU-h. NEW branch names. Needs user go-ahead to submit.
+      best budget on CLCCD test. ~30-45 + 20-40 GPU-h. NEW branch names.
+      STEP 1 SUBMITTED 22:10 (user go-ahead), twin-guard pairs, dev sets (300 pairs/lang):
+        configs config/qwen3_4b_scoreabl_it{4,8}_{on,off}_1gpu.yaml (off = rewards 0/0; aggregation is
+        vote-based, so only branch selection changes); launchers Qwen3/run_eval_scoreabl_it*_*_{L}_*.sh;
+        branches scoreabl-it{4,8}-{on,off}; outputs eval_data/e16a/dev_python_{L}_codenet_depth_16.jsonl.mcts.Qwen3-4B.scoreabl-*.
+        jobs (java it4-on, it4-off, it8-on, it8-off, then rust same order, khajezad/fard):
+        4447752 / 4447753 4447754 / 4447755 4447757 / 4447759 4447760 / 4447764 4447766 / 4447768 4447769 / 4447771 4447773 / 4447775 4447777 / 4447779 
+        SCORE: python eval_data/e16a/rules_table.py <files> (tested row = frozen rule); compare with the
+        existing iteration-2 dev runs (e1-dev-pyonly); paired bootstrap ON-OFF per budget.
   *** 2026-10-01 21:30: SECOND HARNESS FAULT FOUND + FIXED: model test code runs IN-PROCESS, so a
       step calling exit()/sys.exit()/quit() killed the whole search job SILENTLY with status 0.
       SCB seed-1 java (4410642) stopped at 740/1800 this way at 18:52 ("COMPLETED").
