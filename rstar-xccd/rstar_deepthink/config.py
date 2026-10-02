@@ -147,7 +147,7 @@ class BaseConfig:
     )
     score_version: str = field(
         default="v1", metadata={"help": "search-time step scoring: 'v1' = assert-consistency-score "
-                                         "(unchanged default), 'v2' = rstar_deepthink/agents/step_scoring.py"}
+                                         "(unchanged default), 'v2' = rstar_deepthink/agents/step_scoring.py, 'v3' = v2 + harness evidence (score_code_step_v3)"}
     )
     execute_code2: bool = field(
         default=True, metadata={"help": "stage/compile Code 2 when a step tries to run it; False = python-only ablation arm (the step is told Code 2 cannot be executed)"}

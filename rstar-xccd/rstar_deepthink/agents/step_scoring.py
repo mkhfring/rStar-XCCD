@@ -122,3 +122,44 @@ def score_leaf(final_answer, leaf_text, ancestor_states, negative):
         if m and CLAIMED_TEST_RE.search(m.group(1)):
             return negative
     return None
+
+
+# ---------------------------------------------------------------------------
+# score_version "v3" (2026-10-02, plan section 00b step B). Built on v2. Motivation
+# (eval_data/e16a/score_ablation_analysis_2026-10-02.txt, reaggregate_dev_2026-10-02.txt):
+# under v1, the shortcut print("not code clones") always ran cleanly (+1) while real tests
+# crashed more (-1), so on true clones the WRONG untested non-clone trajectories had the
+# highest values. v3 = v2 (echo / no output -> 0, Code-2 bonus, leaf penalty) plus:
+#   - harness evidence (auto_code2 "[Harness]" block): a clean DIFFERENT -> deferred
+#     verdict "non-clone"; otherwise a clean SAME -> deferred verdict "clone". Deferred
+#     verdicts are scored at the leaf by consistency with the branch's own answer (same
+#     mechanism as assertions), never against the label.
+#   - only INCONCLUSIVE / BOTH FAILED lines (likely invalid inputs) -> 0.5 * negative.
+#   - a crash -> 0.5 * negative (was negative), so attempting a test is not punished more
+#     than skipping it. It still counts toward errors_threshold.
+HARNESS_LINE_RE = re.compile(r"^Input \d+: .* -> (SAME|DIFFERENT|BOTH FAILED|INCONCLUSIVE)", re.M)
+
+
+def split_harness(observation):
+    """(observation without the [Harness] block, list of harness verdict words)."""
+    obs = observation or ""
+    i = obs.find("[Harness]")
+    if i < 0:
+        return obs, []
+    verdicts = [m.group(1) for m in HARNESS_LINE_RE.finditer(obs[i:])]
+    return obs[:i].rstrip(), verdicts
+
+
+def score_code_step_v3(observation, executed_code, positive, negative, code2_bonus=0.5):
+    """Return (reward or None, deferred verdict or None, counts_as_error)."""
+    main, verdicts = split_harness(observation)
+    if verdicts:
+        if "DIFFERENT" in verdicts:
+            return None, "non-clone", False
+        if "SAME" in verdicts:
+            return None, "clone", False
+        return 0.5 * negative, None, False
+    outcome, _ = classify(main, executed_code)
+    if outcome == "crash":
+        return 0.5 * negative, None, True
+    return score_code_step(main, executed_code, positive, negative, code2_bonus)

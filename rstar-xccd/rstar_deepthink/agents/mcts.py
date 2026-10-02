@@ -19,7 +19,7 @@ from rstar_deepthink.constants import (
 from .tree import BaseTree, code_execution, collect_action_inputs, extract_program
 from .beam_search import BS
 from evaluate_clone_results import normalize_label, NO_CODE_MESSAGE
-from .step_scoring import score_code_step, score_leaf
+from .step_scoring import score_code_step, score_code_step_v3, score_leaf
 
 # Matches an `assert` statement in generated code, used to decide whether a
 # python_interpreter step made an equivalence claim worth checking for
@@ -152,7 +152,7 @@ class MCTS(BS):
             observation_wrapped = self.obs_wrap(observation)
             new_node.state["text"] = f"{step_result}{self.config.step_delim}{observation_wrapped}"
 
-            if getattr(self.config, "score_version", "v1") == "v2":
+            if getattr(self.config, "score_version", "v1") in ("v2", "v3"):
                 self._score_code_step_v2(node, new_node, parser_result, step_result, observation)
             else:
                 self._score_code_step_v1(node, new_node, parser_result, step_result, observation)
@@ -170,7 +170,8 @@ class MCTS(BS):
         """score_version "v2" -- see rstar_deepthink/agents/step_scoring.py."""
         history_action_inputs = collect_action_inputs(node, parser_result["action"])
         executed_code = extract_program(''.join(history_action_inputs) + parser_result["action_input"])
-        reward, verdict, counts_as_error = score_code_step(
+        scorer = score_code_step_v3 if getattr(self.config, "score_version", "v1") == "v3" else score_code_step
+        reward, verdict, counts_as_error = scorer(
             observation, executed_code, self.config.positive_reward, self.config.negative_reward,
             getattr(self.config, "code2_bonus", 0.5))
         if counts_as_error:
@@ -251,7 +252,7 @@ class MCTS(BS):
             return
 
         self._score_pending_assert_verdicts(node)
-        if getattr(self.config, "score_version", "v1") == "v2":
+        if getattr(self.config, "score_version", "v1") in ("v2", "v3"):
             ancestors = []
             a = node.parent
             while a is not None:

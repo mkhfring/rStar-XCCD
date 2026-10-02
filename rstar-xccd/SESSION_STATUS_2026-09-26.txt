@@ -25,6 +25,39 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-02 ~06:00 STEP B SUBMITTED (user OK; plan section 00b). New score_version "v3"
+      (rstar_deepthink/agents/step_scoring.py score_code_step_v3; = v2 + harness evidence:
+      DIFFERENT/SAME -> deferred verdict scored by consistency at the leaf; INCONCLUSIVE/BOTH FAILED
+      only -> -0.5; crash -0.5; shortcut/hollow 0). Unit-tested on 8 observation types.
+      22 runs, DEV DATA ONLY, twin guard, configs config/qwen3_4b_stepb_*.yaml, launchers
+      Qwen3/run_stepb_*.sh, branches stepb-{dev,hard}-{ext,pyonly}-it{2,4,8}-{v1,v3}:
+        extension (both programs run: auto_code2, java v3 / rust v4) on dev (CLCCD-style) it2-v1,
+        it4/it8 x v1/v3; on the hard dev pilot it4/it8 x v1/v3; python-only SCB v3 at it4/it8 on dev.
+      jobs (khajezad / fard):
+        stepb-dev-ext-it2-v1 java: 4469762 / 4469763
+        stepb-dev-ext-it4-v1 java: 4469764 / 4469765
+        stepb-hard-ext-it4-v1 java: 4469766 / 4469767
+        stepb-dev-ext-it4-v3 java: 4469768 / 4469769
+        stepb-hard-ext-it4-v3 java: 4469770 / 4469771
+        stepb-dev-pyonly-it4-v3 java: 4469772 / 4469773
+        stepb-dev-ext-it8-v1 java: 4469774 / 4469775
+        stepb-hard-ext-it8-v1 java: 4469776 / 4469777
+        stepb-dev-ext-it8-v3 java: 4469778 / 4469779
+        stepb-hard-ext-it8-v3 java: 4469780 / 4469781
+        stepb-dev-pyonly-it8-v3 java: 4469782 / 4469783
+        stepb-dev-ext-it2-v1 rust: 4469784 / 4469785
+        stepb-dev-ext-it4-v1 rust: 4469786 / 4469787
+        stepb-hard-ext-it4-v1 rust: 4469788 / 4469789
+        stepb-dev-ext-it4-v3 rust: 4469790 / 4469791
+        stepb-hard-ext-it4-v3 rust: 4469792 / 4469793
+        stepb-dev-pyonly-it4-v3 rust: 4469794 / 4469795
+        stepb-dev-ext-it8-v1 rust: 4469796 / 4469797
+        stepb-hard-ext-it8-v1 rust: 4469799 / 4469800
+        stepb-dev-ext-it8-v3 rust: 4469801 / 4469802
+        stepb-hard-ext-it8-v3 rust: 4469805 / 4469806
+        stepb-dev-pyonly-it8-v3 rust: 4469807 / 4469808
+      SCORE: rules_table.py (CLCCD-style dev), score_hard_negatives.py --lang L (hard pilot; picks up
+      every stepb run), reaggregate_dev.py-style rules incl. value-weighted and harness rules.
   *** 2026-10-02 03:30: ALL RUNS DONE. SCB seeds (tested): java .9691/.9698/.9686 (mean .9692 +- .0006);
       rust .9165/.9164/.9007 (.9112 +- .0091). User: step 2 of the score ablation WAITS for an analysis
       -> TODO list in ../../rStar-XCCD-Paper/PAPER_COMPLETION_PLAN_2026-09-30.md "00b status". Do that
