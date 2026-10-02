@@ -1,0 +1,18 @@
+== java: clone 150 / hard 150 / cross 75
+  SCB (tested rule)                    clone-rec 0.907 | bug->clone 0.827 [0.76, 0.88] | cross->clone 0.013 | F1 0.663 BA 0.540 MCC 0.118
+  Qwen3-4B sp2 thinking                clone-rec 0.847 | bug->clone 0.673 [0.59, 0.74] | cross->clone 0.000 | F1 0.672 BA 0.587 MCC 0.203
+  phi-4 sp2                            clone-rec 0.920 | bug->clone 0.760 [0.69, 0.82] | cross->clone 0.000 | F1 0.687 BA 0.580 MCC 0.218
+  Extension (clone-on-disagreement)    clone-rec 0.567 | bug->clone 0.247 [0.18, 0.32] | cross->clone 0.000 | F1 0.625 BA 0.660 MCC 0.326
+  paired bootstrap by problem (150 problems, 5000 resamples): Extension (clone-on-disagreement) minus system
+    SCB (tested rule)                  F1 -0.038 [-0.109, +0.025]  BA +0.120 [+0.057, +0.180]  MCC +0.208 [+0.062, +0.347]
+    Qwen3-4B sp2 thinking              F1 -0.047 [-0.115, +0.012]  BA +0.073 [+0.013, +0.130]  MCC +0.123 [+0.002, +0.243]
+    phi-4 sp2                          F1 -0.062 [-0.130, +0.001]  BA +0.080 [+0.020, +0.137]  MCC +0.108 [-0.022, +0.236]
+== rust: clone 36 / hard 36 / cross 18
+  SCB (tested rule)                    clone-rec 0.917 | bug->clone 0.806 [0.65, 0.90] | cross->clone 0.056 | F1 0.673 BA 0.556 MCC 0.161
+  Qwen3-4B sp2 thinking                clone-rec 0.833 | bug->clone 0.694 [0.53, 0.82] | cross->clone 0.000 | F1 0.659 BA 0.569 MCC 0.164
+  phi-4 sp2                            clone-rec 0.861 | bug->clone 0.778 [0.62, 0.88] | cross->clone 0.111 | F1 0.653 BA 0.542 MCC 0.108
+  Extension (clone-on-disagreement)    clone-rec 0.694 | bug->clone 0.194 [0.10, 0.35] | cross->clone 0.000 | F1 0.735 BA 0.750 MCC 0.503
+  paired bootstrap by problem (36 problems, 5000 resamples): Extension (clone-on-disagreement) minus system
+    SCB (tested rule)                  F1 +0.062 [-0.042, +0.151]  BA +0.194 [+0.111, +0.278]  MCC +0.342 [+0.153, +0.549]
+    Qwen3-4B sp2 thinking              F1 +0.076 [-0.031, +0.179]  BA +0.181 [+0.083, +0.278]  MCC +0.340 [+0.127, +0.564]
+    phi-4 sp2                          F1 +0.083 [-0.018, +0.169]  BA +0.208 [+0.125, +0.292]  MCC +0.395 [+0.221, +0.585]
