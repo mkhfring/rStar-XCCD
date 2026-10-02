@@ -25,6 +25,11 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-02 03:30: ALL RUNS DONE. SCB seeds (tested): java .9691/.9698/.9686 (mean .9692 +- .0006);
+      rust .9165/.9164/.9007 (.9112 +- .0091). User: step 2 of the score ablation WAITS for an analysis
+      -> TODO list in ../../rStar-XCCD-Paper/PAPER_COMPLETION_PLAN_2026-09-30.md "00b status". Do that
+      AFTER the current writing pass (fill seeds, extension-on-CLCCD, score-ablation step-1 text,
+      threats updates), then commit + push.
   *** 2026-10-02 02:15 RESULTS IN (only java seed 1, 4441689, still running ~03:05):
       SEARCH-SCORE ABLATION step 1 DONE (eval_data/e16a/score_ablation_dev_2026-10-02.txt), tested rule:
         java: it2 .966 | it4 on .966 off .962 (+.004 [-.015,+.022]) | it8 on .970 off .980 (-.010 [-.028,+.007])
