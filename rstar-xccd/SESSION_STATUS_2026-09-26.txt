@@ -25,6 +25,12 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-02 10:40 STEP B DONE (all 22 runs complete; note: this time the FARD copies ran, logs
+      Qwen3/q3-4b-stepb-*-fard_*.log.out). Results: eval_data/e16a/step_b_analysis_2026-10-02.txt and
+      plan section "00b step B DONE". Key: extension at 8 rollouts: dev CLCCD-style F1 +0.15..+0.28 over
+      2 rollouts (significant), hard dev BA unchanged; v3 fixes value ordering but no significant
+      accuracy gain. NEXT: user decides whether to freeze extension = it8 (+v3/v1) and confirm on the
+      locked sets + CLCCD test (~40 GPU-h).
   *** 2026-10-02 ~06:00 STEP B SUBMITTED (user OK; plan section 00b). New score_version "v3"
       (rstar_deepthink/agents/step_scoring.py score_code_step_v3; = v2 + harness evidence:
       DIFFERENT/SAME -> deferred verdict scored by consistency at the leaf; INCONCLUSIVE/BOTH FAILED

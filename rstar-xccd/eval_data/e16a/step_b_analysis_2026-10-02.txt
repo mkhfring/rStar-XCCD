@@ -1,0 +1,77 @@
+## 1. CLCCD-style DEV set: F1 (P/R) per rule
+  java SCB py-only it2 v1   tested 0.966 (1.00/0.93) | clone-on-dis 0.776 (1.00/0.63) | tested-real 0.917 (1.00/0.85) | value-weighted 0.707 (1.00/0.55)
+  java SCB py-only it4 v1   tested 0.966 (0.99/0.94) | clone-on-dis 0.847 (0.99/0.74) | tested-real 0.933 (0.99/0.88) | value-weighted 0.729 (1.00/0.57)
+  java SCB py-only it4 v3   tested 0.966 (0.99/0.94) | clone-on-dis 0.881 (1.00/0.79) | tested-real 0.962 (1.00/0.93) | value-weighted 0.690 (1.00/0.53)
+  java SCB py-only it8 v1   tested 0.969 (0.99/0.95) | clone-on-dis 0.894 (0.99/0.81) | tested-real 0.955 (0.99/0.92) | value-weighted 0.681 (0.99/0.52)
+  java SCB py-only it8 v3   tested 0.970 (0.98/0.96) | clone-on-dis 0.881 (1.00/0.79) | tested-real 0.959 (0.99/0.93) | value-weighted 0.687 (0.99/0.53)
+  java EXT it2 v1           tested 0.787 (0.65/1.00) | clone-on-dis 0.477 (1.00/0.31) | tested-real 0.773 (0.64/0.97) | harness 0.507 (1.00/0.34) | value-weighted 0.524 (0.96/0.36)
+  java EXT it4 v1           tested 0.754 (0.60/1.00) | clone-on-dis 0.578 (1.00/0.41) | tested-real 0.747 (0.61/0.97) | harness 0.550 (0.95/0.39) | value-weighted 0.406 (0.93/0.26)
+  java EXT it4 v3           tested 0.753 (0.61/0.99) | clone-on-dis 0.592 (1.00/0.42) | tested-real 0.740 (0.61/0.95) | harness 0.495 (0.96/0.33) | value-weighted 0.680 (0.60/0.78)
+  java EXT it8 v1           tested 0.746 (0.60/1.00) | clone-on-dis 0.627 (0.99/0.46) | tested-real 0.742 (0.59/0.99) | harness 0.529 (0.95/0.37) | value-weighted 0.452 (0.92/0.30)
+  java EXT it8 v3           tested 0.758 (0.61/0.99) | clone-on-dis 0.673 (1.00/0.51) | tested-real 0.755 (0.61/0.99) | harness 0.545 (0.97/0.38) | value-weighted 0.682 (0.59/0.81)
+  rust SCB py-only it2 v1   tested 0.920 (0.92/0.92) | clone-on-dis 0.787 (0.96/0.67) | tested-real 0.886 (0.95/0.83) | value-weighted 0.748 (0.96/0.61)
+  rust SCB py-only it4 v1   tested 0.910 (0.88/0.95) | clone-on-dis 0.857 (0.98/0.76) | tested-real 0.945 (0.97/0.92) | value-weighted 0.678 (0.97/0.52)
+  rust SCB py-only it4 v3   tested 0.889 (0.83/0.96) | clone-on-dis 0.863 (0.94/0.80) | tested-real 0.873 (0.83/0.92) | value-weighted 0.541 (0.83/0.40)
+  rust SCB py-only it8 v1   tested 0.889 (0.83/0.96) | clone-on-dis 0.833 (0.96/0.73) | tested-real 0.916 (0.89/0.95) | value-weighted 0.606 (0.97/0.44)
+  rust SCB py-only it8 v3   tested 0.861 (0.79/0.95) | clone-on-dis 0.855 (0.94/0.79) | tested-real 0.875 (0.82/0.93) | value-weighted 0.531 (0.79/0.40)
+  rust EXT it2 v1           tested 0.524 (0.36/0.95) | clone-on-dis 0.433 (0.95/0.28) | tested-real 0.473 (0.40/0.59) | harness 0.505 (0.93/0.35) | value-weighted 0.648 (0.56/0.77)
+  rust EXT it4 v1           tested 0.503 (0.34/0.97) | clone-on-dis 0.552 (0.97/0.39) | tested-real 0.517 (0.40/0.72) | harness 0.613 (0.94/0.45) | value-weighted 0.604 (0.48/0.81)
+  rust EXT it4 v3           tested 0.502 (0.34/0.99) | clone-on-dis 0.684 (0.95/0.53) | tested-real 0.587 (0.45/0.85) | harness 0.650 (0.90/0.51) | value-weighted 0.462 (0.34/0.73)
+  rust EXT it8 v1           tested 0.480 (0.32/0.97) | clone-on-dis 0.701 (0.98/0.55) | tested-real 0.542 (0.39/0.87) | harness 0.649 (0.95/0.49) | value-weighted 0.637 (0.54/0.77)
+  rust EXT it8 v3           tested 0.465 (0.30/0.99) | clone-on-dis 0.712 (0.98/0.56) | tested-real 0.512 (0.36/0.87) | harness 0.655 (0.97/0.49) | value-weighted 0.504 (0.35/0.89)
+
+## 2. hard-negative DEV pilot: clone recall / bug->clone / BA per rule
+  java SCB py-only it2 v1   tested 0.94/0.73/0.603 | clone-on-dis 0.57/0.46/0.552 | tested-real 0.79/0.64/0.577 | value-weighted 0.46/0.46/0.500
+  java EXT it2 v1           tested 1.00/0.94/0.531 | clone-on-dis 0.66/0.15/0.753 | tested-real 0.96/0.94/0.510 | harness 0.70/0.15/0.773 | value-weighted 0.70/0.19/0.758
+  java EXT it4 v1           tested 1.00/0.96/0.521 | clone-on-dis 0.62/0.10/0.758 | tested-real 0.97/0.95/0.510 | harness 0.51/0.12/0.691 | value-weighted 0.44/0.05/0.696
+  java EXT it4 v3           tested 1.00/0.94/0.531 | clone-on-dis 0.64/0.13/0.753 | tested-real 0.99/0.92/0.536 | harness 0.55/0.14/0.701 | value-weighted 0.91/0.56/0.675
+  java EXT it8 v1           tested 1.00/0.97/0.515 | clone-on-dis 0.67/0.18/0.747 | tested-real 1.00/0.97/0.515 | harness 0.42/0.13/0.644 | value-weighted 0.37/0.07/0.649
+  java EXT it8 v3           tested 1.00/0.98/0.510 | clone-on-dis 0.67/0.22/0.727 | tested-real 0.99/0.98/0.505 | harness 0.43/0.14/0.644 | value-weighted 0.92/0.49/0.711
+  rust SCB py-only it2 v1   tested 0.96/0.83/0.564 | clone-on-dis 0.77/0.51/0.628 | tested-real 0.86/0.68/0.590 | value-weighted 0.64/0.39/0.622
+  rust EXT it2 v1           tested 1.00/0.94/0.532 | clone-on-dis 0.75/0.16/0.794 | tested-real 0.99/0.91/0.538 | harness 0.75/0.17/0.789 | value-weighted 0.78/0.23/0.778
+  rust EXT it4 v1           tested 1.00/0.96/0.521 | clone-on-dis 0.59/0.17/0.707 | tested-real 0.83/0.80/0.516 | harness 0.62/0.15/0.734 | value-weighted 0.79/0.69/0.548
+  rust EXT it4 v3           tested 1.00/0.97/0.516 | clone-on-dis 0.59/0.18/0.702 | tested-real 0.80/0.76/0.521 | harness 0.71/0.17/0.771 | value-weighted 0.85/0.45/0.702
+  rust EXT it8 v1           tested 1.00/0.97/0.516 | clone-on-dis 0.67/0.16/0.755 | tested-real 0.91/0.80/0.559 | harness 0.67/0.11/0.782 | value-weighted 0.84/0.62/0.612
+  rust EXT it8 v3           tested 1.00/0.94/0.532 | clone-on-dis 0.71/0.19/0.761 | tested-real 0.94/0.84/0.548 | harness 0.71/0.16/0.777 | value-weighted 0.93/0.36/0.782
+
+## 3. paired bootstrap v3 - v1 at equal budget (5000 resamples)
+  dev  java SCB py-only it4 tested       F1 v3-v1 +0.000 [-0.022, +0.021]
+  dev  java EXT         it4 clone-on-dis F1 v3-v1 +0.013 [-0.064, +0.093]
+  dev  java EXT         it4 harness      F1 v3-v1 -0.055 [-0.151, +0.040]
+  hard java EXT         it4 clone-on-dis BA v3-v1 -0.005 [-0.070, +0.058]
+  hard java EXT         it4 harness      BA v3-v1 +0.010 [-0.068, +0.090]
+  dev  java SCB py-only it8 tested       F1 v3-v1 +0.000 [-0.023, +0.023]
+  dev  java EXT         it8 clone-on-dis F1 v3-v1 +0.045 [-0.029, +0.125]
+  dev  java EXT         it8 harness      F1 v3-v1 +0.017 [-0.070, +0.106]
+  hard java EXT         it8 clone-on-dis BA v3-v1 -0.021 [-0.078, +0.037]
+  hard java EXT         it8 harness      BA v3-v1 -0.000 [-0.068, +0.068]
+  dev  rust SCB py-only it4 tested       F1 v3-v1 -0.021 [-0.070, +0.024]
+  dev  rust EXT         it4 clone-on-dis F1 v3-v1 +0.131 [+0.008, +0.258]
+  dev  rust EXT         it4 harness      F1 v3-v1 +0.037 [-0.080, +0.158]
+  hard rust EXT         it4 clone-on-dis BA v3-v1 -0.005 [-0.076, +0.064]
+  hard rust EXT         it4 harness      BA v3-v1 +0.037 [-0.014, +0.089]
+  dev  rust SCB py-only it8 tested       F1 v3-v1 -0.028 [-0.067, +0.006]
+  dev  rust EXT         it8 clone-on-dis F1 v3-v1 +0.011 [-0.068, +0.094]
+  dev  rust EXT         it8 harness      F1 v3-v1 +0.006 [-0.096, +0.108]
+  hard rust EXT         it8 clone-on-dis BA v3-v1 +0.005 [-0.053, +0.064]
+  hard rust EXT         it8 harness      BA v3-v1 -0.005 [-0.073, +0.065]
+
+## 4. score diagnostics (CLCCD-style dev): sibling-value differences; on TRUE CLONES mean path value of correct clone votes vs wrong untested non-clone votes
+  java SCB py-only it8 v1   siblings differ  27.5% | correct clone votes q +0.44 (n=423) vs wrong untested non-clone q +0.86 (n=270)
+  java SCB py-only it8 v3   siblings differ  33.5% | correct clone votes q +0.16 (n=441) vs wrong untested non-clone q +0.03 (n=195)
+  java EXT it8 v1           siblings differ  15.3% | correct clone votes q +0.92 (n=158) vs wrong untested non-clone q -0.35 (n=66)
+  java EXT it8 v3           siblings differ  44.8% | correct clone votes q +0.60 (n=181) vs wrong untested non-clone q -0.02 (n=60)
+  rust SCB py-only it8 v1   siblings differ  17.4% | correct clone votes q +0.26 (n=218) vs wrong untested non-clone q +0.84 (n=119)
+  rust SCB py-only it8 v3   siblings differ  19.3% | correct clone votes q -0.09 (n=228) vs wrong untested non-clone q +0.03 (n=106)
+  rust EXT it8 v1           siblings differ  48.5% | correct clone votes q -0.02 (n=97) vs wrong untested non-clone q -0.80 (n=163)
+  rust EXT it8 v3           siblings differ  51.9% | correct clone votes q +0.35 (n=108) vs wrong untested non-clone q -0.24 (n=194)
+
+## 5. budget effect for the EXTENSION (clone-on-disagreement): it8 - it2 (5000 resamples)
+  dev java it8-v1 vs it2-v1: F1 0.627 vs 0.477  diff +0.150 [+0.063, +0.238]
+  dev java it8-v3 vs it2-v1: F1 0.673 vs 0.477  diff +0.195 [+0.116, +0.279]
+  hard java it8-v1 vs it2-v1: BA 0.747 vs 0.753  diff -0.005 [-0.062, +0.047]
+  hard java it8-v3 vs it2-v1: BA 0.727 vs 0.753  diff -0.026 [-0.091, +0.037]
+  dev rust it8-v1 vs it2-v1: F1 0.701 vs 0.433  diff +0.268 [+0.151, +0.386]
+  dev rust it8-v3 vs it2-v1: F1 0.712 vs 0.433  diff +0.279 [+0.152, +0.413]
+  hard rust it8-v1 vs it2-v1: BA 0.756 vs 0.794  diff -0.038 [-0.102, +0.026]
+  hard rust it8-v3 vs it2-v1: BA 0.762 vs 0.794  diff -0.032 [-0.095, +0.032]
