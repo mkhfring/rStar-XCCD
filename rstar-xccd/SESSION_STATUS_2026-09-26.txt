@@ -25,6 +25,18 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-02 02:15 RESULTS IN (only java seed 1, 4441689, still running ~03:05):
+      SEARCH-SCORE ABLATION step 1 DONE (eval_data/e16a/score_ablation_dev_2026-10-02.txt), tested rule:
+        java: it2 .966 | it4 on .966 off .962 (+.004 [-.015,+.022]) | it8 on .970 off .980 (-.010 [-.028,+.007])
+        rust: it2 .920 | it4 on .910 off .897 (+.013 [-.023,+.052]) | it8 on .889 off .873 (+.016 [-.031,+.065])
+        -> NO significant score effect; larger budgets do not help (rust precision .92 -> .80 with more
+           trajectories under the tested rule). Decision rule => scores NOT a supported contribution;
+           describe as multi-trajectory search. Step 2 (test confirmation) NOT warranted (recommend skip; ask user).
+      EXTENSION ON CLCCD (clone-on-disagreement): java F1 .820 (P .998 R .696); rust F1 .630 (P 1.000 R .460)
+        vs SCB .969 / .917 -> precision-oriented, recall cost on the standard benchmark (rust worse: crates).
+      SCB SEEDS (tested): java seed0 .9691, seed2 .9686, seed1 pending; rust .9165 / .9164 / .9007.
+      Rust ext CLCCD job ended OUT_OF_MEMORY AFTER finishing (1200/1200 written; a model-run test program
+        was OOM-killed) -> results valid; harness has no per-program memory limit (threats note).
   *** 2026-10-01 22:00 PLANNED (user, option b; not yet started): SEARCH-SCORE ABLATION, see
       ../../rStar-XCCD-Paper/PAPER_COMPLETION_PLAN_2026-09-30.md section 00b. At the current budget
       (iterations 2 = n_generate_sample 2) the scores cannot change selection. Plan: dev sets,

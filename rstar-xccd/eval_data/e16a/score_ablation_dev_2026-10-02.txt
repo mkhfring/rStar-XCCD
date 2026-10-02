@@ -1,0 +1,7 @@
+# search-score ablation, dev sets (300 pairs/lang), tested rule; paired bootstrap ON minus OFF (5000 resamples)
+== java: iterations 2 (existing dev run) F1 0.9655
+   iterations 4: ON 0.9658  OFF 0.9622  ON-OFF +0.0036 [-0.0147, +0.0222]
+   iterations 8: ON 0.9695  OFF 0.9796  ON-OFF -0.0101 [-0.0281, +0.0071]
+== rust: iterations 2 (existing dev run) F1 0.9200
+   iterations 4: ON 0.9103  OFF 0.8974  ON-OFF +0.0128 [-0.0229, +0.0519]
+   iterations 8: ON 0.8889  OFF 0.8727  ON-OFF +0.0162 [-0.0305, +0.0653]
