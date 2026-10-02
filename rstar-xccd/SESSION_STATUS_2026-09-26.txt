@@ -25,6 +25,20 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-02 11:00 USER DECISIONS: (1) extension FROZEN at 8 rollouts + score_version v3 (chosen on
+      dev, step B). (2) PAPER RULE: add to main.tex ONLY what helps prove the user's contributions
+      (memory paper-only-contribution-evidence); exploratory analyses stay in result/plan files.
+      CONFIRMATION RUNS SUBMITTED (config config/qwen3_4b_stepb_ext_{L}_it8_v3_1gpu.yaml, twin guard):
+        locked java  hard-locked-ext-it8v3 4513001 / 4513002 (8 h)   locked rust 4513007 / 4513008 (8 h)
+        CLCCD java   clccd-ext-it8v3       4513003 / 4513004 (30 h)  CLCCD rust  4513009 / 4513012 (24 h)
+      launchers Qwen3/run_confirm_{hard-locked-ext-it8v3,clccd-ext-it8v3}_{L}_qwen3_4b_1gpu.sh
+      (rewritten from the submitted batch scripts: the first generation wrote both to one file;
+      verified with scontrol write batch_script that every job ran the right script).
+      SCORE when done: hardeval_metrics.py (edit branch hard-locked-ext -> hard-locked-ext-it8v3) and
+      rules_table.py on the CLCCD file (clone-on-disagreement row = frozen rule).
+      PAPER UPDATE then: replace the extension rows/numbers (RQ3 table, RQ4 text, abstract/intro/
+      conclusion figures) with the frozen it8+v3 results; describe the frozen config in Methodology
+      in one or two sentences; nothing else from step B unless it supports a contribution.
   *** 2026-10-02 10:40 STEP B DONE (all 22 runs complete; note: this time the FARD copies ran, logs
       Qwen3/q3-4b-stepb-*-fard_*.log.out). Results: eval_data/e16a/step_b_analysis_2026-10-02.txt and
       plan section "00b step B DONE". Key: extension at 8 rollouts: dev CLCCD-style F1 +0.15..+0.28 over
