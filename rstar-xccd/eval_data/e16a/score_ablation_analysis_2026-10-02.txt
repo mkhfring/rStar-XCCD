@@ -1,0 +1,30 @@
+
+===== java: 300 pairs in every arm
+arm                 nodes leaves  rootV rootCh depth | sibDiff%  q!=1 % | testedLeaves nonclone flips | F1 tested / clone-on-dis / majority
+e1-dev-pyonly        12.2   2.01   2.75   1.93   4.6 |    61.1%   38.5% |         0.89              0 | 0.966 (P1.00) / 0.776 (P1.00) / 0.701 (P1.00)
+scoreabl-it4-on      17.1   3.56   4.45   1.93   4.5 |    44.0%   30.3% |         1.62              0 | 0.966 (P0.99) / 0.847 (P0.99) / 0.684 (P1.00)
+scoreabl-it4-off     17.4   3.54   4.53   1.93   4.6 |     0.0%  100.0% |         1.62              0 | 0.962 (P0.99) / 0.834 (P0.99) / 0.673 (P1.00)
+scoreabl-it8-on      20.5   5.35   6.03   1.94   4.6 |    27.5%   22.8% |         2.67              1 | 0.969 (P0.99) / 0.894 (P0.99) / 0.618 (P1.00)
+scoreabl-it8-off     20.3   5.27   6.04   1.92   4.8 |     0.0%  100.0% |         2.67              0 | 0.980 (P1.00) / 0.846 (P1.00) / 0.649 (P1.00)
+  it4: ON vs OFF identical tree shape (same node ids) in 49/300 pairs; same tested prediction in 293/300
+  it8: ON vs OFF identical tree shape (same node ids) in 51/300 pairs; same tested prediction in 293/300
+
+===== rust: 300 pairs in every arm
+arm                 nodes leaves  rootV rootCh depth | sibDiff%  q!=1 % | testedLeaves nonclone flips | F1 tested / clone-on-dis / majority
+e1-dev-pyonly        11.9   2.00   2.48   1.90   4.6 |    61.2%   31.1% |         0.45              4 | 0.920 (P0.92) / 0.787 (P0.96) / 0.723 (P0.98)
+scoreabl-it4-on      16.5   3.50   3.93   1.91   4.6 |    40.8%   22.0% |         0.87              9 | 0.910 (P0.88) / 0.857 (P0.98) / 0.701 (P0.98)
+scoreabl-it4-off     16.0   3.44   3.88   1.91   4.4 |     0.0%  100.0% |         0.85              9 | 0.897 (P0.86) / 0.824 (P0.96) / 0.760 (P1.00)
+scoreabl-it8-on      18.9   5.00   5.30   1.90   4.6 |    17.4%   12.6% |         1.34             13 | 0.889 (P0.83) / 0.833 (P0.96) / 0.729 (P1.00)
+scoreabl-it8-off     19.2   5.00   5.34   1.89   4.5 |     0.0%  100.0% |         1.43             13 | 0.873 (P0.80) / 0.797 (P0.91) / 0.717 (P0.96)
+  it4: ON vs OFF identical tree shape (same node ids) in 37/300 pairs; same tested prediction in 290/300
+  it8: ON vs OFF identical tree shape (same node ids) in 39/300 pairs; same tested prediction in 281/300
+
+# verdict-based rules: paired bootstrap ON minus OFF (5000 resamples, dev sets)
+  java it4 clone-on-dis : ON 0.847 OFF 0.834  diff +0.013 [-0.031, +0.059]
+  java it4 majority     : ON 0.684 OFF 0.673  diff +0.012 [-0.052, +0.076]
+  java it8 clone-on-dis : ON 0.894 OFF 0.846  diff +0.048 [+0.012, +0.087]
+  java it8 majority     : ON 0.618 OFF 0.649  diff -0.031 [-0.100, +0.039]
+  rust it4 clone-on-dis : ON 0.857 OFF 0.824  diff +0.033 [-0.029, +0.097]
+  rust it4 majority     : ON 0.701 OFF 0.760  diff -0.059 [-0.125, +0.000]
+  rust it8 clone-on-dis : ON 0.833 OFF 0.797  diff +0.036 [-0.019, +0.095]
+  rust it8 majority     : ON 0.729 OFF 0.717  diff +0.012 [-0.058, +0.083]
