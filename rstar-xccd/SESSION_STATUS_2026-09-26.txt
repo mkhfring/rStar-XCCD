@@ -25,6 +25,19 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-03 ~17:00 USER DECISIONS + SUBMITTED:
+      (1) CODE-STEP FULL CLCCD (pilots judged promising): java prompt v3, RUST prompt v2 (v3 lost rust
+          precision on pilot2). TODO (user asked to be reminded): test rust v3 on CLCCD later.
+          Jobs (twin): java 4584338/4584339 (30 h), rust 4584340/4584341 (20 h); worktree rStar-XCCD-codestep
+          @ f18d9ae, launchers Qwen3/run_codestep-clccd_{L}_qwen3_4b_1gpu.sh, branches codestep-clccd-v3 (java) /
+          codestep-clccd-v2 (rust), outputs eval_data/test_python_{L}_CLCCD_depth_16.jsonl.mcts.Qwen3-4B.codestep-clccd-*,
+          logs logs_codestep/. Resume on timeout: resubmit unchanged (both accounts).
+          SCORE: rules majority / current / consistent as in codestep_pilot_analysis.py; compare vs SCB
+          (ablation-pyonly, tested) and ext (clccd-ext-it8v3, current); report with AND without the seed-0
+          pilot pairs (codestep_pilot/pilot_* = v1 dev data) and pilot2 pairs (looked at for v2/v3).
+          Code-step is still NOT in this paper unless the user decides otherwise.
+      (2) SCORE ABLATION STEP 2: SKIPPED (user took the recommendation). Paper: \MK removed; one sentence
+          added in subsec:search-budget (SCB keeps 2 rollouts on test since dev showed no benefit).
   *** 2026-10-03 16:00 ALL JOBS DONE, SCORED (nothing in queue).
       CLCCD EXTENSION it8+v3 (frozen; clone-on-disagreement), 1800/1200 complete (java = fard copy 4513004):
         java F1 .854 (P .997 R .747)   [it2 ext .820; SCB .969]
