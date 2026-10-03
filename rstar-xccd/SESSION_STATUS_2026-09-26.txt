@@ -25,6 +25,12 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-03 ~18:00 PAPER REFRAMED (user request; paper commit ab91d8e, pushed):
+      benchmark finding = headline, SCB = strong compact system/baseline. TITLE KEPT (user: keep
+      "Small Capable Beasts: ..."). Changed: abstract, intro framing (benchmark question first; tested rule = first sign of
+      the shortcut), roadmap sentence after RQs, contributions reordered (hard negatives -> mechanism ->
+      SCB -> extension), Methodology opening (accurate components: SCB runs Python only; MCTS scores not
+      a gain source), Execution Model first sentence, Conclusion. RQ order/results unchanged.
   *** 2026-10-03 ~17:00 USER DECISIONS + SUBMITTED:
       (1) CODE-STEP FULL CLCCD (pilots judged promising): java prompt v3, RUST prompt v2 (v3 lost rust
           precision on pilot2). TODO (user asked to be reminded): test rust v3 on CLCCD later.
