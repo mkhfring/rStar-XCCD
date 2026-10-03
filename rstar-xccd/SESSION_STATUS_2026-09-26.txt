@@ -25,6 +25,51 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-03 16:00 ALL JOBS DONE, SCORED (nothing in queue).
+      CLCCD EXTENSION it8+v3 (frozen; clone-on-disagreement), 1800/1200 complete (java = fard copy 4513004):
+        java F1 .854 (P .997 R .747)   [it2 ext .820; SCB .969]
+        rust F1 .723 (P .988 R .570)   [it2 ext .630; SCB .917]
+        PAPER: RQ4 CLCCD paragraph UPDATED (main.tex, uncommitted at 16:35): crate split recomputed
+        (clones whose Rust code `use`s a non-std root; 2 local modules Node/io excluded -> 88 crate clones;
+        old text said 89, should have been 88): ext buildable 154/212 = 73%, crate 17/88 = 19%;
+        SCB 91% / 88%. Script: eval_data/e16a/clccd_crate_split.py.
+      CODE-STEP v3 on DEV hard pilot (v3 TUNED on this set -> optimistic), majority rule, BA [CI by problem]:
+        java BA .784 (clone-rec .794, bug->clone .227) vs ext .727 (+.057 [-.010,+.124]), SCB .603
+        rust BA .835 (clone-rec .809, bug->clone .138) vs ext .761 (+.074 [+.016,+.133]), SCB .564
+        (v2: java .753, rust .846)
+      CODE-STEP v3 on CLCCD pilot2 (200 pairs/lang), majority: java F1 .942 (P 1.0 R .89) vs ext .883
+        (+.059 [+.014,+.109]); rust F1 .787 (P .841 R .74) vs ext .684 (+.103 [-.036,+.246]).
+        v2 on pilot2: java .913-ish, rust .818 (P .947) -> v3 lost rust precision (7 FP vs 2).
+        rust: 32% of paths have Code 2 unbuilt (crates). NEXT: user decides full CLCCD / locked sets for code-step.
+  *** 2026-10-03 ~04:00 PAPER (commit 34f7506, pushed): locked-set extension results (8 rollouts + v3), method/setting
+      text for budget + v3 scores, dev-set counts, SCB prompt figure, old CodeNet appendix table dropped. Remaining MK:
+      release link (user), CLCCD extension numbers (jobs 4513004 java / 4513009 rust, branch clccd-ext-it8v3; then
+      replace RQ4 CLCCD paragraph incl. crate analysis), extension cost row (user: measure or estimate),
+      score-ablation step 2 (user). Code-step is NOT in this paper. Build: latexmk -f (pgfplots compat=1.18 unknown on cluster).
+  *** 2026-10-03 CODE-STEP v1 PILOT RUNNING (user approved the prompt; pilot first, full CLCCD only after analysis).
+      Worktree ../../rStar-XCCD-codestep (branch codestep-prompt, pushed; pre-line tag pre-codestep-2026-10-02).
+      v1 = 4 examples/lang (clone, same-task NC, different-task NC, one-sided crash -> retry), reward v4,
+      configs config/qwen3_4b_codestep_{java,rust}_v1_1gpu.yaml. Pilot = 200-pair stratified CLCCD sample, seed 0
+      (java 100/100, rust 50/150): eval_data/e16a/codestep_pilot/. Jobs (twin): java 4534529/4534530,
+      rust 4534531/4534532, branch codestep-v1-pilot, logs in the worktree's logs_codestep/.
+      Analyse: (worktree) python eval_data/e16a/codestep_pilot_analysis.py  -- compares vs clccd-ext-it8v3 on same indices.
+      Known before running: Code 2 builds for 93% java / 64% rust pilot pairs (rust: crates, 24/50 clones unbuildable).
+      Then: report to user, decide full CLCCD (1800 java / 1200 rust).
+      UPDATE 2026-10-03 ~01:00: v1 pilot KILLED by user after 28 java / 26 rust trees (outputs kept); fixed -> v2
+      (commit 0e44f55: same() helper, rules 5-6 decide-by-reading into is_clone, 6 examples, whitespace-insensitive
+      differ). v2 pilot on a NEW disjoint sample pilot2 (seed 1): jobs java 4535912/4535913, rust 4535914/4535915,
+      branch codestep-v2-pilot. Analyse: ... codestep_pilot_analysis.py --sample pilot2 --branch codestep-v2-pilot.
+      Seed-0 pilot pairs are now DEV data (used to find v1 failures): exclude or flag them in any full-CLCCD report.
+      UPDATE 2026-10-03 ~01:40: user approved v2 on the DEV hard-negative pilot (hard_python_{L}_codenet, 250 pairs):
+      jobs java 4537449/4537450, rust 4537451/4537452, branch codestep-v2-hard, set copied to the worktree's
+      eval_data/e16a/codestep_hard/. Analyse: python eval_data/e16a/codestep_hard_analysis.py (vs stepb-hard-ext-it8-v3
+      BA 0.727 java / 0.761 rust, SCB 0.603 / 0.564). Plan: full CLCCD + locked sets only if v2 holds up here.
+      UPDATE 2026-10-03 ~02:50: v2 hard early (~45 pairs): RUST BA 0.875 (ext 0.604), JAVA BA 0.58 (ext 0.74).
+      Java misses = inputs invalid for BOTH programs (retried identically, then decided by reading -> non-clone)
+      + out-of-domain inputs. -> v3 (commit 9a01046: err() helper, rules 4-5, example 7), tuned on the DEV hard
+      pilot. Submitted (v2 runs left to finish): v3 hard java 4540341/2, rust 4540343/4 (branch codestep-v3-hard);
+      v3 CLCCD pilot2 java 4540345/6, rust 4540347/8 (branch codestep-v3-pilot).
+      Analyse: codestep_hard_analysis.py --branch codestep-v3-hard ; codestep_pilot_analysis.py --sample pilot2 --branch codestep-v3-pilot
   *** 2026-10-02 ~23:30 CODE-STEP PROMPT (user idea, rStar-Math style): DRAFTS for user review, nothing run.
       rstar_deepthink/few_shots/{mcts_prompt,few_shot}_codestep_python_{java,rust}_DRAFT.json; 3 examples per
       language (clone: sum of multiples; same-task non-clone: // vs /; different-task non-clone: parity vs
