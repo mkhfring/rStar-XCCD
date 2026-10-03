@@ -29,7 +29,7 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
       CLCCD EXTENSION it8+v3 (frozen; clone-on-disagreement), 1800/1200 complete (java = fard copy 4513004):
         java F1 .854 (P .997 R .747)   [it2 ext .820; SCB .969]
         rust F1 .723 (P .988 R .570)   [it2 ext .630; SCB .917]
-        PAPER: RQ4 CLCCD paragraph UPDATED (main.tex, uncommitted at 16:35): crate split recomputed
+        PAPER: RQ4 CLCCD paragraph UPDATED (paper commit a5af8ee, pushed): crate split recomputed
         (clones whose Rust code `use`s a non-std root; 2 local modules Node/io excluded -> 88 crate clones;
         old text said 89, should have been 88): ext buildable 154/212 = 73%, crate 17/88 = 19%;
         SCB 91% / 88%. Script: eval_data/e16a/clccd_crate_split.py.
