@@ -531,6 +531,9 @@ def auto_compare_code2(question: str, inputs: List[str], workdir: str = ".") -> 
 # every reasoning step is a Python code step that checks a stated expectation and
 # updates is_clone. Harness contract (prompt mcts_prompt_codestep_python_{L}_v1.json):
 #   - run_both(stdin_text) is predefined -> (r1, r2), each Res(ok, out, err)
+#   - v2 (2026-10-03): same(a, b) is predefined: both ran and the outputs are equal with ALL
+#     whitespace ignored (CLCCD's tokenizer splits string literals, e.g. "Player- " vs "Player-");
+#     the harness's "outputs differed" count uses the same comparison
 #   - a step runs once; variables persist along ONE trajectory only: earlier code steps of
 #     the same path are replayed silently in a fresh namespace before the current step
 #   - the model sees only the current step's output, plus a one-line [run_both] summary
@@ -586,6 +589,15 @@ def _codestep_run(cmd, stdin_text, workdir):
         return Res(False, "", "timeout")
 
 
+def _norm_out(text):
+    return "".join(str(text).split())
+
+
+def same(a, b):
+    """True if both runs succeeded and printed the same output, ignoring all whitespace."""
+    return bool(a.ok and b.ok and _norm_out(a.out) == _norm_out(b.out))
+
+
 def make_run_both(question: str, log: list):
     key, (cmd1, cmd2, status, workdir) = _codestep_build(question)
 
@@ -597,7 +609,7 @@ def make_run_both(question: str, log: list):
             _CODESTEP_CACHE[(key, stdin_text)] = (r1, r2)
         r1, r2 = _CODESTEP_CACHE[(key, stdin_text)]
         log.append(dict(stdin=stdin_text, ok1=r1.ok, ok2=r2.ok,
-                        differ=r1.ok and r2.ok and r1.out.split() != r2.out.split()))
+                        differ=r1.ok and r2.ok and not same(r1, r2)))
         return r1, r2
     return run_both, (cmd2 is not None), status
 
@@ -620,7 +632,7 @@ def run_codestep(question: str, previous_steps, current_step: str) -> str:
     """Execute one code step of a code-step trajectory and return its observation."""
     log = []
     run_both, built, status = make_run_both(question, log)
-    ns = {"__name__": "__main__", "run_both": run_both, "Res": Res}
+    ns = {"__name__": "__main__", "run_both": run_both, "same": same, "Res": Res}
     for prev in previous_steps:            # replay this trajectory's earlier steps silently
         try:
             with _contextlib.redirect_stdout(_io.StringIO()):

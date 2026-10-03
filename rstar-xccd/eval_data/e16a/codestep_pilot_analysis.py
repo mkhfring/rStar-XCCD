@@ -14,6 +14,7 @@ Behaviour of the trees (is the model doing what the prompt asks?):
   answers that differ from the printed label, Code 2 build failure (and what the model did then).
 
 Usage (../venv-qwen3, from the codestep worktree): python eval_data/e16a/codestep_pilot_analysis.py [--boot 5000]
+      v2: ... --sample pilot2 --branch codestep-v2-pilot
 """
 import argparse
 import collections
@@ -111,10 +112,12 @@ def behaviour(trees, gold):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--boot", type=int, default=5000)
+    ap.add_argument("--sample", default="pilot", help="pilot (seed 0, v1) or pilot2 (seed 1, v2)")
+    ap.add_argument("--branch", default="codestep-v1-pilot")
     a = ap.parse_args()
     for L in ("java", "rust"):
-        gold = {r["index"]: r["answer"] for r in map(json.loads, open(f"{PILOT}/pilot_python_{L}_CLCCD.jsonl"))}
-        f_cs, cs = load(f"{PILOT}/pilot_python_{L}_CLCCD_depth_16.jsonl.mcts.Qwen3-4B.codestep-v1-pilot.*.jsonl")
+        gold = {r["index"]: r["answer"] for r in map(json.loads, open(f"{PILOT}/{a.sample}_python_{L}_CLCCD.jsonl"))}
+        f_cs, cs = load(f"{PILOT}/{a.sample}_python_{L}_CLCCD_depth_16.jsonl.mcts.Qwen3-4B.{a.branch}.*.jsonl")
         f_ex, ex = load(str(MAIN / f"eval_data/test_python_{L}_CLCCD_depth_16.jsonl.mcts.Qwen3-4B.clccd-ext-it8v3.*.jsonl"))
         print(f"===== {L}: code-step {len(cs)}/{len(gold)} trees ({f_cs}); extension {sum(i in ex for i in gold)}/{len(gold)} on the same indices")
         ix = sorted(i for i in gold if i in cs and i in ex)
