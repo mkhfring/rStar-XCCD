@@ -25,6 +25,16 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-02 ~23:30 CODE-STEP PROMPT (user idea, rStar-Math style): DRAFTS for user review, nothing run.
+      rstar_deepthink/few_shots/{mcts_prompt,few_shot}_codestep_python_{java,rust}_DRAFT.json; 3 examples per
+      language (clone: sum of multiples; same-task non-clone: // vs /; different-task non-clone: parity vs
+      reverse, early stop). Outputs are REAL (eval_data/e16a/build_codestep_examples.py <outdir>).
+      HARNESS WORK NEEDED before a pilot: (1) predefine run_both(stdin) -> (r1, r2) with .ok/.out/.err
+      (compile Code 2 once per question); (2) per-trajectory state: execute each step once with variables
+      persisting along the trajectory ONLY (not across branches/questions), and show only that step's own
+      output; (3) label = the boxed label printed by the final step / <answer>.
+      Pilot plan: dev hard pilot + CLCCD-style dev, 8 rollouts, v3, compare with the frozen extension
+      (~10-15 GPU-h). Belongs to the follow-up paper unless the pilot shows a large gain.
   *** 2026-10-02 11:00 USER DECISIONS: (1) extension FROZEN at 8 rollouts + score_version v3 (chosen on
       dev, step B). (2) PAPER RULE: add to main.tex ONLY what helps prove the user's contributions
       (memory paper-only-contribution-evidence); exploratory analyses stay in result/plan files.
