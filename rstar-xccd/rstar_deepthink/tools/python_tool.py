@@ -534,6 +534,9 @@ def auto_compare_code2(question: str, inputs: List[str], workdir: str = ".") -> 
 #   - v2 (2026-10-03): same(a, b) is predefined: both ran and the outputs are equal with ALL
 #     whitespace ignored (CLCCD's tokenizer splits string literals, e.g. "Player- " vs "Player-");
 #     the harness's "outputs differed" count uses the same comparison
+#   - v3 (2026-10-03): err(r) is predefined: the informative error line of a failed run (Python: last
+#     traceback line; Java: the "Exception in thread" line, skipping the JVM's JAVA_TOOL_OPTIONS notice;
+#     Rust: the panic message). Res.err keeps head + tail of stderr so Java's first line survives.
 #   - a step runs once; variables persist along ONE trajectory only: earlier code steps of
 #     the same path are replayed silently in a fresh namespace before the current step
 #   - the model sees only the current step's output, plus a one-line [run_both] summary
@@ -584,13 +587,32 @@ def _codestep_run(cmd, stdin_text, workdir):
     try:
         p = subprocess.run(cmd, input=stdin_text, capture_output=True, text=True,
                            timeout=CODESTEP_RUN_TIMEOUT, cwd=workdir)
-        return Res(p.returncode == 0, p.stdout.strip(), p.stderr.strip()[-300:])
+        e = p.stderr.strip()
+        return Res(p.returncode == 0, p.stdout.strip(), e if len(e) <= 2000 else e[:1000] + "\n...\n" + e[-1000:])
     except subprocess.TimeoutExpired:
         return Res(False, "", "timeout")
 
 
 def _norm_out(text):
     return "".join(str(text).split())
+
+
+_ERR_LINE_RE = re.compile(r"(Error|Exception|panicked|called `|timeout)")
+
+
+def err(r):
+    """The informative error line of a failed run ("" if it ran without error)."""
+    if r.ok:
+        return ""
+    lines = [l.strip() for l in (r.err or "").splitlines()
+             if l.strip() and not l.startswith("Picked up") and not l.strip().startswith("at ")
+             and not l.startswith("note: run with")]
+    hits = [l for l in lines if _ERR_LINE_RE.search(l)]
+    pick = (hits[0] if hits and ("Exception in thread" in hits[0] or "panicked" in hits[0]) else
+            hits[-1] if hits else (lines[-1] if lines else "failed (no error message)"))
+    if "panicked" in pick and lines.index(pick) + 1 < len(lines):   # rust: message is on the next line
+        pick = pick.split(" at ")[0] + ": " + lines[lines.index(pick) + 1]
+    return pick[:160]
 
 
 def same(a, b):
@@ -632,7 +654,7 @@ def run_codestep(question: str, previous_steps, current_step: str) -> str:
     """Execute one code step of a code-step trajectory and return its observation."""
     log = []
     run_both, built, status = make_run_both(question, log)
-    ns = {"__name__": "__main__", "run_both": run_both, "same": same, "Res": Res}
+    ns = {"__name__": "__main__", "run_both": run_both, "same": same, "err": err, "Res": Res}
     for prev in previous_steps:            # replay this trajectory's earlier steps silently
         try:
             with _contextlib.redirect_stdout(_io.StringIO()):
@@ -641,14 +663,14 @@ def run_codestep(question: str, previous_steps, current_step: str) -> str:
             pass
     n0 = len(log)
     buf = _io.StringIO()
-    err = ""
+    step_err = ""
     try:
         with _contextlib.redirect_stdout(buf):
             exec(current_step, ns)
     except BaseException as e:             # incl. SystemExit from model code
-        err = "{}: {}".format(type(e).__name__, str(e))
+        step_err = "{}: {}".format(type(e).__name__, str(e))
     out = truncate_string(buf.getvalue(), max_length=1024).strip()
-    parts = [p for p in (out, err, codestep_summary(log[n0:], built, status)) if p]
+    parts = [p for p in (out, step_err, codestep_summary(log[n0:], built, status)) if p]
     return "\n".join(parts)
 
 class PythonInputs(BaseModel):

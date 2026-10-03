@@ -49,10 +49,11 @@ def metrics(meta, p, ix):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--boot", type=int, default=5000)
+    ap.add_argument("--branch", default="codestep-v2-hard", help="codestep-v2-hard or codestep-v3-hard")
     a = ap.parse_args()
     for L in ("java", "rust"):
         meta = {r["index"]: r for r in map(json.loads, open(f"{HERE}/hard_python_{L}_codenet_meta.jsonl"))}
-        cs = trees(f"{HERE}/hard_python_{L}_codenet_depth_16.jsonl.mcts.Qwen3-4B.codestep-v2-hard.*.jsonl")
+        cs = trees(f"{HERE}/hard_python_{L}_codenet_depth_16.jsonl.mcts.Qwen3-4B.{a.branch}.*.jsonl")
         ex = trees(MAIN / f"hard_python_{L}_codenet_depth_16.jsonl.mcts.Qwen3-4B.stepb-hard-ext-it8-v3.*.jsonl")
         scb = trees(MAIN / f"hard_python_{L}_codenet_depth_16.jsonl.mcts.Qwen3-4B.hard-pyonly.*.jsonl")
         ix = sorted(i for i in cs if i in ex and i in scb and not meta[i].get("multi_answer_suspect"))
@@ -62,8 +63,8 @@ def main():
         sysm = {
             "SCB (tested rule)": {i: RULES["tested"](scb[i]) for i in ix},
             "Extension it8+v3 (current)": {i: predict_label(ex[i]) for i in ix},
-            "Code-step v2 / majority": {i: A.rules(cs[i])["majority"] for i in ix},
-            "Code-step v2 / current": {i: A.rules(cs[i])["current"] for i in ix},
+            "Code-step / majority": {i: A.rules(cs[i])["majority"] for i in ix},
+            "Code-step / current": {i: A.rules(cs[i])["current"] for i in ix},
         }
         for name, p in sysm.items():
             m = metrics(meta, p, ix)
@@ -73,7 +74,7 @@ def main():
             groups.setdefault(meta[i].get("p_id1"), []).append(i)
         keys = sorted(groups)
         rng = random.Random(0)
-        base = sysm["Code-step v2 / majority"]
+        base = sysm["Code-step / majority"]
         for other in ("SCB (tested rule)", "Extension it8+v3 (current)"):
             d = []
             for _ in range(a.boot):
