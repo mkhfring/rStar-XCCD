@@ -147,10 +147,13 @@ class BaseConfig:
     )
     score_version: str = field(
         default="v1", metadata={"help": "search-time step scoring: 'v1' = assert-consistency-score "
-                                         "(unchanged default), 'v2' = rstar_deepthink/agents/step_scoring.py, 'v3' = v2 + harness evidence (score_code_step_v3)"}
+                                         "(unchanged default), 'v2' = rstar_deepthink/agents/step_scoring.py, 'v3' = v2 + harness evidence (score_code_step_v3), 'v4' = code-step mode scoring (score_code_step_v4)"}
     )
     execute_code2: bool = field(
         default=True, metadata={"help": "stage/compile Code 2 when a step tries to run it; False = python-only ablation arm (the step is told Code 2 cannot be executed)"}
+    )
+    codestep: bool = field(
+        default=False, metadata={"help": "code-step mode (branch codestep-prompt): each step is a Python code step; run_both predefined; per-trajectory replay; see python_tool.run_codestep"}
     )
     auto_code2: bool = field(
         default=False, metadata={"help": "harness-side dual execution: after each code step, run Code 1 AND Code 2 on every input the step fed to a Python program and append both outputs (needs execute_code2); see python_tool.auto_compare_code2"}

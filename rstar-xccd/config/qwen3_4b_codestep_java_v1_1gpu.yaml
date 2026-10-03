@@ -1,0 +1,48 @@
+# CODE-STEP v1 (branch codestep-prompt, 2026-10-02): every reasoning step is executed Python updating is_clone;
+# run_both predefined by the harness (python_tool.run_codestep), 4 examples (clone, same-task non-clone,
+# different-task non-clone, one-sided crash then retry), reward v4 (step_scoring.score_code_step_v4/score_leaf_v4).
+# Otherwise = the frozen extension config (8 rollouts).
+mode: "mcts"
+model_dir: ""
+
+few_shot_path: "./rstar_deepthink/few_shots/few_shot_codestep_python_java_v1.json"
+prompt_path: "./rstar_deepthink/few_shots/mcts_prompt_codestep_python_java_v1.json"
+
+swap_space: 8
+temperature: 0.7
+top_p: 0.8
+top_k: 20
+repetition_penalty: 1.1
+min_tokens: 8
+errors_threshold: 2
+
+prompt_wrap: "rstar"
+result_unwrap: "rstar"
+step_delim: "\n"
+stop: ["<end_of_step>", "<end_of_code>", "<end_of_output>", "<end_of_answer>"]
+
+max_depth: 16
+n_generate_sample: 2
+best_of: 2
+is_sampling: False
+iterations: 8
+max_tokens: 512
+
+need_value_func: False
+batch_size: 1
+num_few_shot: 4
+max_model_len: 16384
+c_puct: 2
+terminal_sample: True
+
+llm_gpu_memory_utilization: 0.90
+tp: 1
+
+rust_crate_check: "strict"
+
+execute_code2: True
+auto_code2: False
+score_version: "v4"
+codestep: True
+positive_reward: 1.0
+negative_reward: -1.0

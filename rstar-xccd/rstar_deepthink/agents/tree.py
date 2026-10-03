@@ -12,7 +12,7 @@ from omegaconf import DictConfig, OmegaConf
 from timeout_decorator import timeout
 from rstar_deepthink.config import BaseConfig
 from rstar_deepthink.nodes.base_node import BaseNode
-from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, extract_code2_source, stage_code2, mentions_code2_execution, sanitize_input, is_python_code, snapshot_dir, cleanup_generated_code, execute_code2_enabled, CODE2_DISABLED_MESSAGE, auto_code2_enabled, capture_python_inputs, auto_compare_code2
+from rstar_deepthink.tools.python_tool import PythonInterpreter, extract_code1_python, extract_code2_source, stage_code2, mentions_code2_execution, sanitize_input, is_python_code, snapshot_dir, cleanup_generated_code, execute_code2_enabled, CODE2_DISABLED_MESSAGE, auto_code2_enabled, capture_python_inputs, auto_compare_code2, codestep_enabled, run_codestep
 from rstar_deepthink.constants import TIMEOUT_SECONDS, TIMEOUT_MESSAGE, CODE_END, OUTPUT_END, CODE, ANSWER
 
 
@@ -154,6 +154,18 @@ def code_execution(
     def _code_execution(node: Type[BaseNode], parser_result: Dict[str, str]) -> str:
         # Define tool
         action = parser_result["action"]
+        if action == "python_interpreter" and codestep_enabled():
+            # CODE-STEP MODE: every <code> block is one step; replay this trajectory's
+            # earlier code steps (root -> parent) in a fresh namespace, then run this one.
+            prev, a = [], node
+            while a is not None:
+                if a.state.get("action") == "python_interpreter" and a.state.get("action_input"):
+                    prev.append(extract_program(a.state["action_input"]))
+                a = a.parent
+            current = extract_program(parser_result["action_input"])
+            if not is_python_code(sanitize_input(current)):
+                return "No valid Python code found in the response."
+            return run_codestep(_get_root_question(node), [p for p in prev[::-1] if p], current)
         tool_func = tools[action]
 
         history_action_inputs = collect_action_inputs(node, action)

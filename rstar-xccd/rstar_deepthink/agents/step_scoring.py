@@ -163,3 +163,68 @@ def score_code_step_v3(observation, executed_code, positive, negative, code2_bon
     if outcome == "crash":
         return 0.5 * negative, None, True
     return score_code_step(main, executed_code, positive, negative, code2_bonus)
+
+
+
+# ---------------------------------------------------------------------------
+# score_version "v4" (branch codestep-prompt, 2026-10-03): scoring for CODE-STEP MODE
+# (python_tool.run_codestep). Steps print booleans, so rewards come from the harness's
+# [run_both] summary line, not from the look of the output. No ground truth is read.
+#   step raised an error (model code)            -> 0.5 * negative, counts as error
+#   outputs differed on an input both programs ran -> deferred verdict "non-clone"
+#                                                    (scored at the leaf by consistency)
+#   both programs ran (no difference)             -> positive (valid evidence)
+#   only one-sided failures                       -> 0   (inconclusive; retrying is fine)
+#   only double failures                          -> 0.5 * negative (invalid input)
+#   no run_both call (type check, conclusion)     -> 0
+# Leaf (score_leaf_v4): negative if there is no conclusion step, if the boxed answer differs
+# from the label the last conclusion step printed, or if the answer is clone although a
+# step observed different outputs; positive if consistent and backed by >= 1 valid comparison.
+RUNBOTH_RE = re.compile(r"\[run_both\] (\d+) call\(s\): both ran (\d+), only one failed (\d+), "
+                        r"both failed (\d+), outputs differed (\d+)")
+STEP_ERROR_RE = re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception|Exit|Interrupt)\b.*$", re.M)
+
+
+def runboth_counts(observation):
+    m = RUNBOTH_RE.search(observation or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def printed_label(observation):
+    lines = [l.strip() for l in (observation or "").splitlines() if l.strip() and not l.startswith("[run_both]")]
+    return normalize_label(lines[-1]) if lines and lines[-1].lower() in ("clone", "non-clone") else None
+
+
+def score_code_step_v4(observation, executed_code, positive, negative, code2_bonus=0.5):
+    """Return (reward or None, deferred verdict or None, counts_as_error)."""
+    obs = (observation or "").strip()
+    if obs == NO_CODE_MESSAGE:
+        return negative, None, True
+    body = "\n".join(l for l in obs.splitlines() if not l.startswith("[run_both]"))
+    if STEP_ERROR_RE.search(body.splitlines()[-1] if body.splitlines() else ""):
+        return 0.5 * negative, None, True
+    c = runboth_counts(obs)
+    if c is None:
+        return 0.0, None, False
+    calls, both, one, none, differ = c
+    if differ > 0:
+        return None, "non-clone", False
+    if both > 0:
+        return positive, None, False
+    if one > 0:
+        return 0.0, None, False
+    return 0.5 * negative, None, False
+
+
+def score_leaf_v4(final_answer, ancestor_states, positive, negative):
+    label = normalize_label(final_answer or "")
+    if label is None:
+        return None
+    obs = [s.get("observation") or "" for s in ancestor_states if s.get("action") == "python_interpreter"]
+    concl = next((printed_label(o) for o in obs if printed_label(o)), None)   # nearest to the leaf first
+    if concl is None or concl != label:
+        return negative
+    counts = [c for c in (runboth_counts(o) for o in obs) if c]
+    if label == "clone" and any(c[4] > 0 for c in counts):
+        return negative
+    return positive if any(c[1] > 0 for c in counts) else None

@@ -111,7 +111,10 @@ def _split_example_into_turns(example: str) -> Tuple[str, str]:
     response. apply_chat_template needs these as separate user/assistant
     turns, so split right at the model's first structural tag.
     """
-    idx = example.find(_ANALYSIS_TAG)
+    # Code-step examples (branch codestep-prompt) start the response with <code>, not
+    # <analysis>; split at whichever structural tag comes first.
+    found = [i for i in (example.find(_ANALYSIS_TAG), example.find("<code>")) if i != -1]
+    idx = min(found) if found else -1
     if idx == -1:
         return example.strip(), ""
     return example[:idx].strip(), example[idx:].strip()

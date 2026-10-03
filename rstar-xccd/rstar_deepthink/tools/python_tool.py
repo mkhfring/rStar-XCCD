@@ -525,6 +525,120 @@ def auto_compare_code2(question: str, inputs: List[str], workdir: str = ".") -> 
     return "\n".join(lines)
 
 
+
+# ---------------------------------------------------------------------------
+# CODE-STEP MODE (branch codestep-prompt, 2026-10-03). rStar-Math-style prompt in which
+# every reasoning step is a Python code step that checks a stated expectation and
+# updates is_clone. Harness contract (prompt mcts_prompt_codestep_python_{L}_v1.json):
+#   - run_both(stdin_text) is predefined -> (r1, r2), each Res(ok, out, err)
+#   - a step runs once; variables persist along ONE trajectory only: earlier code steps of
+#     the same path are replayed silently in a fresh namespace before the current step
+#   - the model sees only the current step's output, plus a one-line [run_both] summary
+# Off by default (RSTAR_CODESTEP env, like the other switches).
+import collections as _collections
+import contextlib as _contextlib
+import hashlib as _hashlib
+import io as _io
+import tempfile as _tempfile
+
+CODESTEP_ENV = "RSTAR_CODESTEP"
+CODESTEP_RUN_TIMEOUT = 10
+Res = _collections.namedtuple("Res", "ok out err")
+_CODESTEP_BUILDS = {}   # question key -> (cmd1, cmd2 or None, build status)
+_CODESTEP_CACHE = {}    # (question key, stdin) -> (Res, Res)
+
+
+def codestep_enabled() -> bool:
+    return os.environ.get(CODESTEP_ENV, "0") == "1"
+
+
+def set_codestep(enabled: bool) -> None:
+    os.environ[CODESTEP_ENV] = "1" if enabled else "0"
+
+
+def _codestep_build(question: str):
+    code1 = extract_code1_python(question)
+    lang, source = extract_code2_source(question)
+    key = _hashlib.md5((code1 + "\x00" + source).encode()).hexdigest()
+    if key not in _CODESTEP_BUILDS:
+        workdir = os.path.join(_tempfile.gettempdir(), f"rstar_codestep_{os.getpid()}_{key}")
+        os.makedirs(workdir, exist_ok=True)
+        path1 = os.path.join(workdir, "candidate_code.py")
+        with open(path1, "w") as f:
+            f.write(code1)
+        status = stage_code2(lang, source, workdir) if source else "Code 2 not found"
+        if lang == "java" and status.startswith("Code 2 (Java) compiled"):
+            cmd2 = ["java", "-cp", workdir, java_class_name(source) or "Code2"]
+        elif lang == "rust" and status.startswith("Code 2 (Rust) compiled"):
+            cmd2 = [os.path.join(workdir, "candidate_code2")]
+        else:
+            cmd2 = None
+        _CODESTEP_BUILDS[key] = ([sys.executable, path1], cmd2, status, workdir)
+    return key, _CODESTEP_BUILDS[key]
+
+
+def _codestep_run(cmd, stdin_text, workdir):
+    try:
+        p = subprocess.run(cmd, input=stdin_text, capture_output=True, text=True,
+                           timeout=CODESTEP_RUN_TIMEOUT, cwd=workdir)
+        return Res(p.returncode == 0, p.stdout.strip(), p.stderr.strip()[-300:])
+    except subprocess.TimeoutExpired:
+        return Res(False, "", "timeout")
+
+
+def make_run_both(question: str, log: list):
+    key, (cmd1, cmd2, status, workdir) = _codestep_build(question)
+
+    def run_both(stdin_text):
+        stdin_text = str(stdin_text)
+        if (key, stdin_text) not in _CODESTEP_CACHE:
+            r1 = _codestep_run(cmd1, stdin_text, workdir)
+            r2 = _codestep_run(cmd2, stdin_text, workdir) if cmd2 else Res(False, "", status[:300])
+            _CODESTEP_CACHE[(key, stdin_text)] = (r1, r2)
+        r1, r2 = _CODESTEP_CACHE[(key, stdin_text)]
+        log.append(dict(stdin=stdin_text, ok1=r1.ok, ok2=r2.ok,
+                        differ=r1.ok and r2.ok and r1.out.split() != r2.out.split()))
+        return r1, r2
+    return run_both, (cmd2 is not None), status
+
+
+def codestep_summary(calls, built=True, status=""):
+    if not calls:
+        return ""
+    both = sum(c["ok1"] and c["ok2"] for c in calls)
+    one = sum(c["ok1"] != c["ok2"] for c in calls)
+    none = sum(not c["ok1"] and not c["ok2"] for c in calls)
+    diff = sum(c["differ"] for c in calls)
+    line = (f"[run_both] {len(calls)} call(s): both ran {both}, only one failed {one}, "
+            f"both failed {none}, outputs differed {diff}")
+    if not built:
+        line += f" | Code 2 could not be built: {status[:160]}"
+    return line
+
+
+def run_codestep(question: str, previous_steps, current_step: str) -> str:
+    """Execute one code step of a code-step trajectory and return its observation."""
+    log = []
+    run_both, built, status = make_run_both(question, log)
+    ns = {"__name__": "__main__", "run_both": run_both, "Res": Res}
+    for prev in previous_steps:            # replay this trajectory's earlier steps silently
+        try:
+            with _contextlib.redirect_stdout(_io.StringIO()):
+                exec(prev, ns)
+        except BaseException:              # an earlier step may have failed; keep going
+            pass
+    n0 = len(log)
+    buf = _io.StringIO()
+    err = ""
+    try:
+        with _contextlib.redirect_stdout(buf):
+            exec(current_step, ns)
+    except BaseException as e:             # incl. SystemExit from model code
+        err = "{}: {}".format(type(e).__name__, str(e))
+    out = truncate_string(buf.getvalue(), max_length=1024).strip()
+    parts = [p for p in (out, err, codestep_summary(log[n0:], built, status)) if p]
+    return "\n".join(parts)
+
 class PythonInputs(BaseModel):
     query: str = Field(description="code snippet to run")
     
