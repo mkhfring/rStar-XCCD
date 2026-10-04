@@ -25,6 +25,31 @@ RESUME HERE (rewritten 2026-09-30; read (NOW) first, then (00); (0) and below
 ================================================================================
 
 (NOW) 2026-09-30 -- STATE FOR RESUMING
+  *** 2026-10-03 ~21:00 POLYHUMAN EXTERNAL REPLICATION (user go-ahead; Python-Java only, PolyHuman has no Rust):
+      Data: PolyHuman (Sun et al. arXiv 2608.23961, Zenodo 21800077, CC BY 4.0) in eval_data/external/polyhuman/,
+      CodeContests train parquet (CC BY 4.0) in eval_data/external/code_contests/ (5.4 GB; both gitignored).
+      All Codeforces -> no overlap with CodeNet sets. Builder eval_data/e16a/build_polyhuman_set.py (verified:
+      oracle Py/Java Pass1 match expected on public + <=8 private tests; Pass2 multi-answer check; Java Fail must
+      PRINT different tokens -> hn_output; timeouts/crashes excluded). Target 300 hn + 300 clone + 150 cross,
+      difficulty-proportional, seed 20261003. CPU job 4597255 (Qwen3/run_build_polyhuman_cpu.sh) ->
+      eval_data/e16a/polyhuman_python_java{,_meta}.jsonl + polyhuman_java_MANIFEST.txt (read-only, LOCKED).
+      BUILD DONE (4597255): 2185 candidates -> hn_output 1347, oracle-fail 391, wa_agrees 313 (PolyHuman 'incorrect'
+      but same output on all official tests used), float 87, wa_compile 31, hn_crash 13, timeout-only 1. Set: 300/300/150,
+      difficulty A127 B82 C51 D23 E10 F+ 7; distinguishing input public 99 / private 201. sha256 in MANIFEST.
+      SUBMITTED 2026-10-03 ~21:30 (khajezad/fard): SCB 4600142/4600150, ext 4600151/4600152,
+      Qwen3-4B think 4600153/4600154, phi-4 4600155/4600156. Launchers as below: Qwen3/run_eval_polyhuman_pyonly_java_qwen3_4b_1gpu.sh (SCB, 12 h),
+      Qwen3/run_eval_polyhuman_ext_java_qwen3_4b_1gpu.sh (ext it8v3, 20 h), baselines via run_litprompts_1gpu_twin.sh
+      --model_dir Qwen3-4B (thinking args as lit-q3-4b-think-locked) and phi-4 (--tp 2, 2 GPUs), both with
+      --datasets java --prompts sp2 --seed 1 --datafile eval_data/e16a/polyhuman_python_{L}.jsonl.
+      SCORE: python eval_data/e16a/hardeval_metrics.py --set polyhuman --bootstrap 5000
+      (hardeval_metrics.py now defaults to the frozen ext branch hard-locked-ext-it8v3; reproduces paper numbers).
+  *** 2026-10-03 ~19:00 RELATED WORK (user request; main.tex + reference.bib UNCOMMITTED pending review):
+      new subsec:benchmark-validity "What Clone Benchmarks Measure" (Yu TOSEM'22 identifiers; Krinke IWSC'22 +
+      arXiv'25 BCB; Xu arXiv'26 transformations; Kitsios ASE'25 unseen functionality; CLCCD authors themselves
+      state negatives are different-problem only; PolyHuman = Sun et al. arXiv 2608.23961 (CLOSEST: correct vs
+      incorrect same-problem pairs, C++/Java/Python, commercial LLMs); EquiBench; DISCO). HyClone (arXiv
+      2508.01357, LLM filter + execution, same-language Python) cited in execution-augmented subsection.
+      Intro + hard-negatives section point to them. 9 bib entries, all verified online.
   *** 2026-10-03 ~18:00 PAPER REFRAMED (user request; paper commit ab91d8e, pushed):
       benchmark finding = headline, SCB = strong compact system/baseline. TITLE KEPT (user: keep
       "Small Capable Beasts: ..."). Changed: abstract, intro framing (benchmark question first; tested rule = first sign of

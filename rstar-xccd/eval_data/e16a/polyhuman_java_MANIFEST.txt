@@ -1,0 +1,11 @@
+PolyHuman external hard-negative set (Python-Java), built /project/6104180/khajezad/rstar-xccd-remote/rStar-XCCD/rstar-xccd/eval_data/e16a/build_polyhuman_set.py, seed 20261003
+Source: Sun, Uchoa, Gheyi, Assuncao, 'Evaluating Language Models on Cross-Language Code Functional
+Equivalence', arXiv 2608.23961, Zenodo 10.5281/zenodo.21800077 (CC BY 4.0); tests from DeepMind
+CodeContests (CC BY 4.0). Codeforces problems only (no overlap with CodeNet-based sets).
+candidates processed: 2185; status counts: {'hn_output': 1347, 'float': 87, 'oracle': 391, 'wa_agrees': 313, 'wa_compile': 31, 'hn_crash': 13, 'wa_timeout_only': 1, 'no_tests': 2}
+pairs: 750 {'hn_output': 300, 'clone': 300, 'cross': 150}
+hard-negative difficulty: {'A': 127, 'B': 82, 'C': 51, 'D': 23, 'E': 10, 'F': 3, 'G': 1, 'H': 1, 'K': 1, 'M': 1}
+distinguishing input source: {'private': 201, 'public': 99}
+sha256 81860be5416edcdba36fd0a043319c07724a6d5ec638ef577c2b61ee5065e72b  eval_data/e16a/polyhuman_python_java.jsonl
+sha256 d60ce6ae64dfa8b3e5e19bc34dbdd329912df02209e8e8f9457589d5fa063b4b  eval_data/e16a/polyhuman_python_java_meta.jsonl
+LOCKED: rules fixed before any model run; use once; do not tune on it.
