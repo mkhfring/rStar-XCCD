@@ -8,8 +8,11 @@ Systems (rules fixed BEFORE the locked sets were used):
   Extension      harness-side dual execution, clone-on-disagreement (branch hard-locked-ext)
   Qwen3-4B think / phi-4: literature prompt sp2 (dev-chosen), --split hardeval
 With --bootstrap: paired bootstrap by PROBLEM (Extension minus each system) for F1, BA, MCC.
+--set polyhuman scores the EXTERNAL PolyHuman set (polyhuman_python_java.jsonl, build_polyhuman_set.py; java
+only) with the same frozen systems: branches polyhuman-pyonly / polyhuman-ext-it8v3, baselines run with
+--datafile eval_data/e16a/polyhuman_python_{L}.jsonl.
 
-Usage (../venv-qwen3): python eval_data/e16a/hardeval_metrics.py [--bootstrap 5000]
+Usage (../venv-qwen3): python eval_data/e16a/hardeval_metrics.py [--set hardeval|polyhuman] [--bootstrap 5000]
 """
 import argparse
 import glob
@@ -26,6 +29,10 @@ import summarize_baselines as S  # noqa: E402
 from rescore_runs import RULES  # noqa: E402
 
 E = "eval_data/e16a"
+SETS = {  # stem, SCB branch, extension branch (frozen it8 + v3), languages
+    "hardeval": ("hardeval_python_{L}_codenet", "hard-locked-pyonly", "hard-locked-ext-it8v3", ("java", "rust")),
+    "polyhuman": ("polyhuman_python_{L}", "polyhuman-pyonly", "polyhuman-ext-it8v3", ("java",)),
+}
 
 
 def wilson(k, n, z=1.96):
@@ -38,17 +45,20 @@ def wilson(k, n, z=1.96):
     return c - h, c + h
 
 
-def systems(L):
+def systems(L, which="hardeval"):
+    stem, scb, ext, _ = SETS[which]
+    stem = stem.format(L=L)
+
     def tree(branch):
-        f = sorted(glob.glob(f"{E}/hardeval_python_{L}_codenet_depth_16.jsonl.mcts.Qwen3-4B.{branch}.*.jsonl"))[-1]
+        f = sorted(glob.glob(f"{E}/{stem}_depth_16.jsonl.mcts.Qwen3-4B.{branch}.*.jsonl"))[-1]
         return {r["index"]: r["rstar"] for r in map(json.loads, open(f)) if "rstar" in r}
     out = {}
-    t = tree("hard-locked-pyonly")
+    t = tree(scb)
     out["SCB (tested rule)"] = {i: RULES["tested"](t[i]) for i in t}
     for model, var, name in (("Qwen3-4B", "think", "Qwen3-4B sp2 thinking"), ("phi-4", "nothink", "phi-4 sp2")):
-        f = sorted(glob.glob(f"eval_data/paper_prompt_replication/hardeval_python_{L}_codenet.jsonl.{model}.sp2.*.jsonl"))[-1]
+        f = sorted(glob.glob(f"eval_data/paper_prompt_replication/{stem}.jsonl.{model}.sp2.*.jsonl"))[-1]
         out[name] = {i: p for i, (_, p) in S.load_preds(f, "sp2", var).items()}
-    t = tree("hard-locked-ext")
+    t = tree(ext)
     out["Extension (clone-on-disagreement)"] = {i: RULES["current"](t[i]) for i in t}
     return out
 
@@ -68,11 +78,13 @@ def metrics(meta, p, ix):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bootstrap", type=int, default=0)
+    ap.add_argument("--set", default="hardeval", choices=list(SETS))
     args = ap.parse_args()
-    for L in ("java", "rust"):
-        meta = {m["index"]: m for m in map(json.loads, open(f"{E}/hardeval_python_{L}_codenet_meta.jsonl"))}
+    for L in SETS[args.set][3]:
+        stem = SETS[args.set][0].format(L=L)
+        meta = {m["index"]: m for m in map(json.loads, open(f"{E}/{stem}_meta.jsonl"))}
         kinds = {k: [i for i in meta if meta[i]["kind"] == k] for k in ("clone", "hn_output", "cross")}
-        sysp = systems(L)
+        sysp = systems(L, args.set)
         print(f"== {L}: clone {len(kinds['clone'])} / hard {len(kinds['hn_output'])} / cross {len(kinds['cross'])}")
         hard = kinds["clone"] + kinds["hn_output"]
         for name, p in sysp.items():
