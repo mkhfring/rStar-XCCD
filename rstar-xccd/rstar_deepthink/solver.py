@@ -137,7 +137,13 @@ class Solver(BaseModel):
         valid_agents: List[BaseTree],
     ) -> List[BaseTree]:
         post_agents = []
-        future = self.process_pool.map(self.__class__.processor, valid_agents, outputs, timeout=TIMEOUT_SECONDS)
+        # 2026-10-05 (codestep-train, Phase 0.1): the timeout covers ALL children of one
+        # agent's step (each child has its own TIMEOUT_SECONDS cap in tree.code_execution).
+        # A single 60 s budget for 2+ children made the pool drop the whole step (and the
+        # agent retried it) whenever the children together ran past 60 s.
+        n_children = max(1, int(getattr(self.config, "n_generate_sample", 1) or 1))
+        pool_timeout = max(TIMEOUT_SECONDS, n_children * (TIMEOUT_SECONDS + 5) + 30)
+        future = self.process_pool.map(self.__class__.processor, valid_agents, outputs, timeout=pool_timeout)
         iterator = future.result()
 
         progress_bar = tqdm(total=len(valid_agents), desc="generate_postprocess")

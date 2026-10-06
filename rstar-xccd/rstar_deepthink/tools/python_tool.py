@@ -546,12 +546,38 @@ import contextlib as _contextlib
 import hashlib as _hashlib
 import io as _io
 import tempfile as _tempfile
+import time as _time
+import json as _json
+import fcntl as _fcntl
 
 CODESTEP_ENV = "RSTAR_CODESTEP"
 CODESTEP_RUN_TIMEOUT = 10
+# 2026-10-05 (branch codestep-train, training plan Phase 0.1): program time that the
+# run_both calls of ONE step may spend (cache hits are free). Later calls in the step
+# return at once with SKIPPED_ERR, so a step cannot exhaust the per-child timeout when
+# the model feeds inputs on which a program loops (pair 98, CF 146B).
+CODESTEP_STEP_BUDGET = 25
+SKIPPED_ERR = "skipped: this step used up its run time; test fewer or smaller inputs per step"
 Res = _collections.namedtuple("Res", "ok out err")
 _CODESTEP_BUILDS = {}   # question key -> (cmd1, cmd2 or None, build status)
 _CODESTEP_CACHE = {}    # (question key, stdin) -> (Res, Res)
+
+
+def _codestep_root():
+    # Shared by all pool workers of one job: builds and results are reused across
+    # workers, so replaying earlier steps does not re-run programs (a replayed call that
+    # once timed out used to cost its full timeout again on every later step).
+    root = os.path.join(_tempfile.gettempdir(),
+                        f"rstar_codestep_{os.environ.get('SLURM_JOB_ID', 'local')}")
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def _atomic_write_json(path, obj):
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        _json.dump(obj, f)
+    os.replace(tmp, path)
 
 
 def codestep_enabled() -> bool:
@@ -567,12 +593,23 @@ def _codestep_build(question: str):
     lang, source = extract_code2_source(question)
     key = _hashlib.md5((code1 + "\x00" + source).encode()).hexdigest()
     if key not in _CODESTEP_BUILDS:
-        workdir = os.path.join(_tempfile.gettempdir(), f"rstar_codestep_{os.getpid()}_{key}")
-        os.makedirs(workdir, exist_ok=True)
+        workdir = os.path.join(_codestep_root(), key)
+        os.makedirs(os.path.join(workdir, "results"), exist_ok=True)
         path1 = os.path.join(workdir, "candidate_code.py")
-        with open(path1, "w") as f:
-            f.write(code1)
-        status = stage_code2(lang, source, workdir) if source else "Code 2 not found"
+        with open(os.path.join(workdir, ".lock"), "w") as lockf:
+            _fcntl.flock(lockf, _fcntl.LOCK_EX)     # one worker builds; the others wait and reuse
+            try:
+                done = os.path.join(workdir, "build.json")
+                if os.path.exists(done):
+                    with open(done) as f:
+                        status = _json.load(f)["status"]
+                else:
+                    with open(path1, "w") as f:
+                        f.write(code1)
+                    status = stage_code2(lang, source, workdir) if source else "Code 2 not found"
+                    _atomic_write_json(done, {"status": status})
+            finally:
+                _fcntl.flock(lockf, _fcntl.LOCK_UN)
         if lang == "java" and status.startswith("Code 2 (Java) compiled"):
             cmd2 = ["java", "-cp", workdir, java_class_name(source) or "Code2"]
         elif lang == "rust" and status.startswith("Code 2 (Rust) compiled"):
@@ -620,15 +657,32 @@ def same(a, b):
     return bool(a.ok and b.ok and _norm_out(a.out) == _norm_out(b.out))
 
 
-def make_run_both(question: str, log: list):
+def make_run_both(question: str, log: list, budget: Optional[dict] = None):
+    """budget: {"left": seconds} shared by the run_both calls of one step (None = no limit).
+    Cache hits (memory or disk) cost nothing; a call made when the budget is used up
+    returns SKIPPED_ERR for both programs and is not cached."""
     key, (cmd1, cmd2, status, workdir) = _codestep_build(question)
 
     def run_both(stdin_text):
         stdin_text = str(stdin_text)
         if (key, stdin_text) not in _CODESTEP_CACHE:
-            r1 = _codestep_run(cmd1, stdin_text, workdir)
-            r2 = _codestep_run(cmd2, stdin_text, workdir) if cmd2 else Res(False, "", status[:300])
-            _CODESTEP_CACHE[(key, stdin_text)] = (r1, r2)
+            disk = os.path.join(workdir, "results", _hashlib.sha1(stdin_text.encode()).hexdigest() + ".json")
+            if os.path.exists(disk):
+                with open(disk) as f:
+                    d = _json.load(f)
+                _CODESTEP_CACHE[(key, stdin_text)] = (Res(*d["r1"]), Res(*d["r2"]))
+            elif budget is not None and budget["left"] <= 0:
+                skipped = Res(False, "", SKIPPED_ERR)
+                log.append(dict(stdin=stdin_text, ok1=False, ok2=False, differ=False, skipped=True))
+                return skipped, skipped
+            else:
+                t0 = _time.monotonic()
+                r1 = _codestep_run(cmd1, stdin_text, workdir)
+                r2 = _codestep_run(cmd2, stdin_text, workdir) if cmd2 else Res(False, "", status[:300])
+                if budget is not None:
+                    budget["left"] -= _time.monotonic() - t0
+                _CODESTEP_CACHE[(key, stdin_text)] = (r1, r2)
+                _atomic_write_json(disk, {"r1": list(r1), "r2": list(r2)})
         r1, r2 = _CODESTEP_CACHE[(key, stdin_text)]
         log.append(dict(stdin=stdin_text, ok1=r1.ok, ok2=r2.ok,
                         differ=r1.ok and r2.ok and not same(r1, r2)))
@@ -643,8 +697,12 @@ def codestep_summary(calls, built=True, status=""):
     one = sum(c["ok1"] != c["ok2"] for c in calls)
     none = sum(not c["ok1"] and not c["ok2"] for c in calls)
     diff = sum(c["differ"] for c in calls)
+    skipped = sum(c.get("skipped", False) for c in calls)
+    none -= skipped
     line = (f"[run_both] {len(calls)} call(s): both ran {both}, only one failed {one}, "
             f"both failed {none}, outputs differed {diff}")
+    if skipped:
+        line += f", skipped (step run time used up) {skipped}"
     if not built:
         line += f" | Code 2 could not be built: {status[:160]}"
     return line
@@ -653,7 +711,8 @@ def codestep_summary(calls, built=True, status=""):
 def run_codestep(question: str, previous_steps, current_step: str) -> str:
     """Execute one code step of a code-step trajectory and return its observation."""
     log = []
-    run_both, built, status = make_run_both(question, log)
+    budget = {"left": 0.0}                 # replay: cache hits only, never re-run programs
+    run_both, built, status = make_run_both(question, log, budget)
     ns = {"__name__": "__main__", "run_both": run_both, "same": same, "err": err, "Res": Res}
     for prev in previous_steps:            # replay this trajectory's earlier steps silently
         try:
@@ -661,6 +720,9 @@ def run_codestep(question: str, previous_steps, current_step: str) -> str:
                 exec(prev, ns)
         except BaseException:              # an earlier step may have failed; keep going
             pass
+    # A replayed call missing from the shared cache was skipped or cut off the first time;
+    # it stays skipped. The current step then gets its own budget.
+    budget["left"] = float(CODESTEP_STEP_BUDGET)
     n0 = len(log)
     buf = _io.StringIO()
     step_err = ""
