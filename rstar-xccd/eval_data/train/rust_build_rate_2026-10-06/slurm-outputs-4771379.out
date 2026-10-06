@@ -1,0 +1,26 @@
+1335 Rust programs with a same-problem clone pair and a pid
+
+set            group            n             agree            differ rust_runtime_fail     python_failed        no_samples      rust_unbuilt   agree/(agree+differ+rs_fail)
+clccd_test     newly_built     99                93                 1                 0                 3                 1                 1   0.989
+clccd_test     control        201               186                 7                 0                 6                 2                 0   0.964
+dev            newly_built      9                 9                 0                 0                 0                 0                 0   1.000
+dev            control         66                59                 1                 0                 5                 1                 0   0.983
+hard           newly_built      0                 0                 0                 0                 0                 0                 0   nan
+hard           control        100               100                 0                 0                 0                 0                 0   1.000
+hardeval       newly_built      0                 0                 0                 0                 0                 0                 0   nan
+hardeval       control         36                36                 0                 0                 0                 0                 0   1.000
+train_codenet  newly_built     77                65                 5                 0                 4                 1                 2   0.929
+train_codenet  control        747               623                34                 0                66                24                 0   0.948
+ALL            newly_built    185               167                 6                 0                 7                 2                 3   0.965
+ALL            control       1150              1004                42                 0                77                27                 0   0.960
+
+newly_built non-agreeing:
+  train_codenet p02749 00359e08 differ: py='3 5 2 4 1' rs='2 1 4 5 3'
+  train_codenet p02697 4b40f2c5 differ: py='1 4' rs='2 3'
+  clccd_test    p03267 545334f8 differ: py='3 4\n1 2 0\n1 2 2\n2 3 0\n2 3 1' rs='3 4\n1 2 0\n1 2 1\n2 3 0\n2 3 2'
+  train_codenet p00177 75d103b4 rust_unbuilt: Code 2 staged at /tmp/rstar_codestep_4771379/d8359662fb604e330d25705aa252b0b0/candidate_code2.rs, but `rustc /tmp/rstar_codestep_4771379/d8359662fb604
+  train_codenet p03461 9cd35a9c differ: py='Possible\n4 5\n1 2 X\n4 3 Y\n1 4 0\n2 3 1\n1 3 3\n1 3' rs='Possible\n4 5\n1 2 X\n3 4 Y\n1 3 0\n2 4 1\n1 4 3\n1 4'
+  train_codenet p03744 ae72278b differ: py='10.0\n15.0\n13.2' rs='10.0000000\n15.0000000\n13.2000000'
+  train_codenet p04005 bad8e797 rust_unbuilt: Code 2 staged at /tmp/rstar_codestep_4771379/4757747512f44e2cb86fadc2619890a2/candidate_code2.rs, but `rustc /tmp/rstar_codestep_4771379/4757747512f44
+  clccd_test    p02911 d6f45223 rust_unbuilt: Code 2 staged at /tmp/rstar_codestep_4771379/9f678c7a5e1bec4b96eed41fb9160a15/candidate_code2.rs, but `rustc /tmp/rstar_codestep_4771379/9f678c7a5e1be
+  train_codenet p03413 dfe38edb differ: py='11\n3\n1\n4\n2' rs='11\n3\n5\n3\n1'

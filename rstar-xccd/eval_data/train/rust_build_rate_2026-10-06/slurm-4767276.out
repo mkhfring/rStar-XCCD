@@ -1,0 +1,56 @@
+2708 distinct programs; measuring 2708 x 3 modes
+  200/8124
+  400/8124
+  600/8124
+  800/8124
+  1000/8124
+  1200/8124
+  1400/8124
+  1600/8124
+  1800/8124
+  2000/8124
+  2200/8124
+  2400/8124
+  2600/8124
+  2800/8124
+  3000/8124
+  3200/8124
+  3400/8124
+  3600/8124
+  3800/8124
+  4000/8124
+  4200/8124
+  4400/8124
+  4600/8124
+  4800/8124
+  5000/8124
+  5200/8124
+  5400/8124
+  5600/8124
+  5800/8124
+  6000/8124
+  6200/8124
+  6400/8124
+  6600/8124
+  6800/8124
+  7000/8124
+  7200/8124
+  7400/8124
+  7600/8124
+  7800/8124
+  8000/8124
+
+set                    n                     old                new_nocr                     new
+clccd_test           300  built 67.0% ref  89 fail  10  built 67.0% ref  89 fail  10  built 99.7% ref   0 fail   1
+dev                  227  built 91.2% ref  14 fail   6  built 91.2% ref  14 fail   6  built 100.0% ref   0 fail   0
+hard                 230  built 99.6% ref   1 fail   0  built 99.6% ref   1 fail   0  built 100.0% ref   0 fail   0
+hardeval              72  built 100.0% ref   0 fail   0  built 100.0% ref   0 fail   0  built 100.0% ref   0 fail   0
+train_codenet       1154  built 89.5% ref 101 fail  20  built 89.5% ref 101 fail  20  built 99.7% ref   0 fail   3
+codenet_train_old    747  built 77.8% ref 155 fail  11  built 77.8% ref 155 fail  11  built 99.1% ref   0 fail   7
+ALL                 2708  built 85.0% ref 360 fail  47  built 85.0% ref 360 fail  47  built 99.6% ref   0 fail  11
+
+[old] median build 0.4s, max 1.4s; top errors: [('E0433', 43), ('E0425', 1), ('E0034', 1), ('error: format argument must be a string literal', 1), ('E0254', 1)]
+
+[new_nocr] median build 0.5s, max 1.6s; top errors: [('E0433', 43), ('E0425', 1), ('E0034', 1), ('error: format argument must be a string literal', 1), ('E0254', 1)]
+
+[new] median build 0.5s, max 1.7s; top errors: [('E0432', 8), ('E0425', 1), ('E0034', 1), ('error: format argument must be a string literal', 1)]

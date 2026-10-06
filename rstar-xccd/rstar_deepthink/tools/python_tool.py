@@ -348,6 +348,26 @@ def _compiler_env() -> dict:
     return env
 
 
+RUST_CRATES_ENV = "RUST_CRATES_DIR"
+RUST_CRATES_DEFAULT = "/lustre06/project/6104180/khajezad/rstar-xccd-remote/rust_crates_atcoder2020"
+RUST_BUILD_TIMEOUT = 60      # -O builds that link proconio's macros take longer than plain rustc
+_RUST_EXTERNS = None
+
+
+def _rust_externs() -> dict:
+    """{crate: rlib, '_deps_dir': dir} from tools/rust_crates/build.sh's externs.json, or {}."""
+    global _RUST_EXTERNS
+    if _RUST_EXTERNS is None:
+        path = os.path.join(os.environ.get(RUST_CRATES_ENV, RUST_CRATES_DEFAULT), "externs.json")
+        try:
+            import json as _j
+            with open(path) as f:
+                _RUST_EXTERNS = _j.load(f)
+        except (OSError, ValueError):
+            _RUST_EXTERNS = {}
+    return _RUST_EXTERNS
+
+
 def stage_code2(language: Optional[str], source: str, workdir: str = ".") -> str:
     """Write Code 2 to disk and, for java/rust, compile it so the model's own
     subprocess calls (mirroring how it already runs candidate_code.py for
@@ -383,7 +403,8 @@ def stage_code2(language: Optional[str], source: str, workdir: str = ".") -> str
 
     if language == "rust":
         external = rust_external_crates(source)
-        if external:
+        externs = _rust_externs()
+        if external and not externs:
             return (f"Code 2 uses external crate(s) {sorted(external)}, which this "
                      "offline sandbox cannot fetch (no network on compute nodes). "
                      "Reason about its expected behavior instead of executing it.")
@@ -391,16 +412,37 @@ def stage_code2(language: Optional[str], source: str, workdir: str = ".") -> str
         bin_path = os.path.join(workdir, "candidate_code2")
         with open(src_path, "w") as f:
             f.write(source)
+        # 2026-10-06 (codestep-train, Phase 0.2): optimised build (-O) like the judge's
+        # release build (debug builds panic on integer overflow where release wraps, and
+        # run much slower). If the plain build fails and the offline crate set exists
+        # (AtCoder 2020 crates: proconio, itertools, num, ...), retry with edition 2018
+        # and the crates linked in -- crate use is not always visible as `use` lines.
+        attempts = [["rustc", "-O", src_path, "-o", bin_path]]
+        if externs:
+            attempts.append(["rustc", "--edition", "2018", "-O", "-L", f"dependency={externs['_deps_dir']}"]
+                            + [a for k, v in sorted(externs.items()) if not k.startswith("_")
+                               for a in ("--extern", f"{k}={v}")]
+                            + [src_path, "-o", bin_path])
+            if external:
+                attempts.reverse()
         try:
-            compile_proc = subprocess.run(
-                ["rustc", src_path, "-o", bin_path], cwd=workdir, capture_output=True,
-                text=True, timeout=CODE2_TOOL_TIMEOUT, env=_compiler_env(),
-            )
+            procs = []
+            for cmd in attempts:
+                compile_proc = subprocess.run(
+                    cmd, cwd=workdir, capture_output=True,
+                    text=True, timeout=RUST_BUILD_TIMEOUT, env=_compiler_env(),
+                )
+                procs.append((cmd, compile_proc))
+                if compile_proc.returncode == 0:
+                    break
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
             return f"Code 2 staged at {src_path}, but rustc is unavailable: {e}"
         if compile_proc.returncode != 0:
+            # Both builds failed: report the crate build's error -- the plain build's
+            # is usually just "unresolved import `proconio`", which hides the real one.
+            shown = next((p.stderr for c, p in procs if "--extern" in c), compile_proc.stderr)
             return (f"Code 2 staged at {src_path}, but `rustc {src_path}` failed:\n"
-                     f"{compile_proc.stderr.strip()[:500]}")
+                     f"{shown.strip()[:500]}")
         return (f"Code 2 (Rust) compiled to {bin_path}: run it with "
                 f"subprocess.run([{bin_path!r}], input=..., capture_output=True, text=True).")
 
