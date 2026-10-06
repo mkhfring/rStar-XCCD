@@ -19,6 +19,7 @@ from rstar_deepthink.constants import (
     OUTPUT_END,
 )
 from .tree import BaseTree, code_execution
+from rstar_deepthink.tools.python_tool import codestep_enabled, pop_codestep_calls
 
 
 class BS(BaseTree):
@@ -169,7 +170,10 @@ class BS(BaseTree):
             new_node.state["text"] = step_result
             new_node.state["final_answer"] = parser_result["final_answer"]
         elif parser_result["action"]:
+            pop_codestep_calls()               # drop any record left by an earlier call
             observation = code_execution(node, parser_result)
+            if codestep_enabled():
+                new_node.state["run_both_calls"] = pop_codestep_calls()
             new_node.state["action"] = parser_result["action"]
             new_node.state["action_input"] = parser_result["action_input"]
             new_node.state["observation"] = observation

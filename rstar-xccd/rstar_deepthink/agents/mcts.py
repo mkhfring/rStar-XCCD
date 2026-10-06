@@ -17,6 +17,7 @@ from rstar_deepthink.constants import (
     CODE_END,
 )
 from .tree import BaseTree, code_execution, collect_action_inputs, extract_program
+from rstar_deepthink.tools.python_tool import codestep_enabled, pop_codestep_calls
 from .beam_search import BS
 from evaluate_clone_results import normalize_label, NO_CODE_MESSAGE
 from .step_scoring import score_code_step, score_code_step_v3, score_code_step_v4, score_leaf, score_leaf_v4
@@ -132,7 +133,10 @@ class MCTS(BS):
             new_node.state["final_answer"] = parser_result["final_answer"]
             self.eval_final_answer(new_node)
         elif parser_result["action"]:
+            pop_codestep_calls()               # drop any record left by an earlier call
             observation = code_execution(node, parser_result)
+            if codestep_enabled():
+                new_node.state["run_both_calls"] = pop_codestep_calls()
             new_node.state["action"] = parser_result["action"]
             new_node.state["action_input"] = parser_result["action_input"]
             new_node.state["observation"] = observation

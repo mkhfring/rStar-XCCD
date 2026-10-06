@@ -72,6 +72,13 @@ def main():
     check("T3 valid input: difference found", "40774 40074 False" in obs and "outputs differed 1" in obs,
           f"{dt:.1f}s\n{obs}")
 
+    pt.pop_codestep_calls()
+    pt.run_codestep(Q, [LOOP_STEP], GOOD_STEP)
+    rec = pt.pop_codestep_calls()
+    check("T5 run_both_calls records the current step only (stdin + both outputs)",
+          len(rec) == 1 and rec[0]["stdin"] == "39999 4774\n" and rec[0]["out1"] == "40774"
+          and rec[0]["out2"] == "40074" and rec[0]["differ"] and pt.pop_codestep_calls() == [], str(rec))
+
     ctx = mp.get_context("spawn")
     q = ctx.Queue()
     q.put(os.environ["SLURM_JOB_ID"])

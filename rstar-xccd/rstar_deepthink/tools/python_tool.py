@@ -561,6 +561,25 @@ SKIPPED_ERR = "skipped: this step used up its run time; test fewer or smaller in
 Res = _collections.namedtuple("Res", "ok out err")
 _CODESTEP_BUILDS = {}   # question key -> (cmd1, cmd2 or None, build status)
 _CODESTEP_CACHE = {}    # (question key, stdin) -> (Res, Res)
+# 2026-10-05 (Phase 0.3): machine-readable record of the CURRENT step's run_both calls
+# (stdin, both results). Saved on the node as state["run_both_calls"] so the verifier can
+# check after the run whether a distinguishing input was valid. Never shown to the model.
+CODESTEP_RECORD_MAX = 20000
+_LAST_CODESTEP_CALLS = []
+
+
+def pop_codestep_calls():
+    global _LAST_CODESTEP_CALLS
+    calls, _LAST_CODESTEP_CALLS = _LAST_CODESTEP_CALLS, []
+    return calls
+
+
+def _record(stdin_text, r1, r2, skipped=False):
+    cut = lambda x: x if len(x) <= CODESTEP_RECORD_MAX else x[:CODESTEP_RECORD_MAX]
+    return dict(stdin=cut(stdin_text), stdin_len=len(stdin_text),
+                ok1=r1.ok, out1=cut(r1.out), err1=err(r1),
+                ok2=r2.ok, out2=cut(r2.out), err2=err(r2),
+                differ=bool(r1.ok and r2.ok and not same(r1, r2)), skipped=skipped)
 
 
 def _codestep_root():
@@ -657,7 +676,7 @@ def same(a, b):
     return bool(a.ok and b.ok and _norm_out(a.out) == _norm_out(b.out))
 
 
-def make_run_both(question: str, log: list, budget: Optional[dict] = None):
+def make_run_both(question: str, log: list, budget: Optional[dict] = None, record: Optional[list] = None):
     """budget: {"left": seconds} shared by the run_both calls of one step (None = no limit).
     Cache hits (memory or disk) cost nothing; a call made when the budget is used up
     returns SKIPPED_ERR for both programs and is not cached."""
@@ -674,6 +693,8 @@ def make_run_both(question: str, log: list, budget: Optional[dict] = None):
             elif budget is not None and budget["left"] <= 0:
                 skipped = Res(False, "", SKIPPED_ERR)
                 log.append(dict(stdin=stdin_text, ok1=False, ok2=False, differ=False, skipped=True))
+                if record is not None:
+                    record.append(_record(stdin_text, skipped, skipped, skipped=True))
                 return skipped, skipped
             else:
                 t0 = _time.monotonic()
@@ -686,6 +707,8 @@ def make_run_both(question: str, log: list, budget: Optional[dict] = None):
         r1, r2 = _CODESTEP_CACHE[(key, stdin_text)]
         log.append(dict(stdin=stdin_text, ok1=r1.ok, ok2=r2.ok,
                         differ=r1.ok and r2.ok and not same(r1, r2)))
+        if record is not None:
+            record.append(_record(stdin_text, r1, r2))
         return r1, r2
     return run_both, (cmd2 is not None), status
 
@@ -710,9 +733,11 @@ def codestep_summary(calls, built=True, status=""):
 
 def run_codestep(question: str, previous_steps, current_step: str) -> str:
     """Execute one code step of a code-step trajectory and return its observation."""
-    log = []
+    global _LAST_CODESTEP_CALLS
+    _LAST_CODESTEP_CALLS = []
+    log, record = [], []
     budget = {"left": 0.0}                 # replay: cache hits only, never re-run programs
-    run_both, built, status = make_run_both(question, log, budget)
+    run_both, built, status = make_run_both(question, log, budget, record)
     ns = {"__name__": "__main__", "run_both": run_both, "same": same, "err": err, "Res": Res}
     for prev in previous_steps:            # replay this trajectory's earlier steps silently
         try:
@@ -724,6 +749,8 @@ def run_codestep(question: str, previous_steps, current_step: str) -> str:
     # it stays skipped. The current step then gets its own budget.
     budget["left"] = float(CODESTEP_STEP_BUDGET)
     n0 = len(log)
+    del record[:]                          # keep the current step's calls only
+    _LAST_CODESTEP_CALLS = record          # filled while the step runs (partial if it times out)
     buf = _io.StringIO()
     step_err = ""
     try:
